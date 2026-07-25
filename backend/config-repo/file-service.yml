@@ -1,0 +1,12 @@
+server:
+  port: 8083
+
+spring:
+  application:
+    name: file-service
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
