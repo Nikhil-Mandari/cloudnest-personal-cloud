@@ -1,0 +1,13 @@
+app:
+  name: CloudNest
+
+company:
+  name: CloudNest Technologies
+
+environment: development
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "*"
