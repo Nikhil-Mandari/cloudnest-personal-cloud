@@ -1,0 +1,59 @@
+# ═══════════════════════════════════════════════════════════════
+# CloudNest API Gateway — Local Configuration
+# ═══════════════════════════════════════════════════════════════
+#
+# This file contains the minimum configuration required to
+# connect to the central Config Server. All route definitions,
+# service URLs, and feature toggles are managed remotely via
+# backend/config-repo/gateway.yml.
+# ═══════════════════════════════════════════════════════════════
+
+server:
+  port: 8080
+
+spring:
+  application:
+    name: api-gateway
+
+  # ── Import configuration from the central Config Server ──
+  config:
+    import: optional:configserver:http://localhost:8888
+
+  # ── Cloud Gateway defaults ──────────────────────────────
+  cloud:
+    gateway:
+      default-filters:
+        - DedupeResponseHeader=Access-Control-Allow-Origin
+
+# ── Eureka Service Discovery ──────────────────────────────
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+
+# ── Management / Actuator ─────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,gateway
+  endpoint:
+    health:
+      show-details: when-authorized
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: CloudNest API Gateway
+    version: 1.0.0
+    environment: development
+
+logging:
+  level:
+    root: INFO
+    com.cloudnest.gateway: DEBUG
+    org.springframework.cloud.gateway: INFO
