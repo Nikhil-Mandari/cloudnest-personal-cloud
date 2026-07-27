@@ -14,6 +14,9 @@ import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
 import javax.crypto.spec.SecretKeySpec;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
 import java.util.Optional;
 
@@ -31,8 +34,41 @@ public class JwtUtil {
     private final SecretKey signingKey;
 
     public JwtUtil(@Value("${jwt.secret}") String secret) {
-        byte[] keyBytes = Base64.getDecoder().decode(secret);
+        byte[] keyBytes = decodeSecret(secret);
         this.signingKey = new SecretKeySpec(keyBytes, "HmacSHA256");
+    }
+
+    /**
+     * Decodes the JWT secret: tries Base64 first, then falls back to
+     * SHA-256 key derivation for plain-text values.
+     * <p>
+     * This dual-mode handling accommodates config-server property values that
+     * may arrive with the literal "${JWT_SECRET:…}" placeholder unresolved
+     * (config-data mode, no bootstrap).
+     */
+    private static byte[] decodeSecret(String secret) {
+        try {
+            byte[] decoded = Base64.getDecoder().decode(secret);
+            log.debug("JWT secret decoded from Base64");
+            return decoded;
+        } catch (IllegalArgumentException e) {
+            log.warn("JWT secret is not valid Base64; falling back to SHA-256 key derivation. " +
+                      "For production, set a Base64-encoded secret via JWT_SECRET environment variable.");
+            return sha256(secret);
+        }
+    }
+
+    /**
+     * Derives a 256-bit key from the given plain-text string using SHA-256.
+     */
+    private static byte[] sha256(String value) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            return md.digest(value.getBytes(StandardCharsets.UTF_8));
+        } catch (NoSuchAlgorithmException e) {
+            // SHA-256 is guaranteed to be available in every JVM.
+            throw new RuntimeException("SHA-256 not available", e);
+        }
     }
 
     /**
