@@ -5,8 +5,29 @@ spring:
   application:
     name: file-service
 
+  datasource:
+    url: ${FILE_DB_URL:jdbc:mysql://localhost:3306/file_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${FILE_DB_USERNAME:root}
+    password: ${FILE_DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+# ── Supabase Storage Configuration ──────────────────────────
+supabase:
+  url: ${SUPABASE_URL:https://your-project.supabase.co}
+  anon-key: ${SUPABASE_ANON_KEY:your-anon-key}
+  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:your-service-role-key}
+  storage:
+    bucket: ${SUPABASE_STORAGE_BUCKET:cloudnest-files}
+
+eureka:
+  client:
+    service-url:
+      defaultZone: http://localhost:8761/eureka/
+    register-with-eureka: true
+    fetch-registry: true
+
 management:
   endpoints:
     web:
       exposure:
-        include: "*"
+        include: health,info
