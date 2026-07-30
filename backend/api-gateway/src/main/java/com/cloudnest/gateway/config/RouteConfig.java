@@ -43,7 +43,8 @@ public class RouteConfig {
 
     /**
      * Registers all downstream service routes.
-     * Each route strips the {@code /api/<service>} prefix before forwarding.
+     * Each route forwards the full request path to the downstream service
+     * (e.g. {@code /api/auth/register} is forwarded as-is to the auth service).
      */
     @Bean
     public RouteLocator gatewayRoutes(RouteLocatorBuilder builder) {
@@ -63,8 +64,9 @@ public class RouteConfig {
      * Builds a route whose predicate matches the given {@code pathPattern}
      * and forwards to the {@code lb://<serviceName>} load-balanced URI.
      * <p>
-     * The {@code stripPrefix=1} ensures the leading path segment (e.g.
-     * {@code /api}) is removed before reaching the downstream service.
+     * The full request path is forwarded as-is so that downstream services
+     * receive the original {@code /api/<service>/...} URL, matching their
+     * controller mappings and security configurations.
      *
      * @param spec        the predicate spec (route builder entry point)
      * @param pathPattern the request path pattern to match, e.g. {@code /api/auth/**}
@@ -74,7 +76,6 @@ public class RouteConfig {
     private Buildable<Route> apiRoute(PredicateSpec spec, String pathPattern, String serviceName) {
         return spec
                 .path(pathPattern)
-                .filters(f -> f.stripPrefix(1))
                 .uri("lb://" + serviceName);
     }
 }
