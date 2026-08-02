@@ -16,8 +16,9 @@ spring:
     name: api-gateway
 
   # ── Import configuration from the central Config Server ──
+  # Defaults to localhost for local development; override CONFIG_SERVER_URL in Docker.
   config:
-    import: optional:configserver:http://localhost:8888
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
 
   # ── Cloud Gateway defaults ──────────────────────────────
   cloud:
@@ -29,7 +30,7 @@ spring:
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
     register-with-eureka: true
     fetch-registry: true
 

@@ -42,6 +42,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             "/api/auth/refresh",
             "/api/auth/forgot-password",
             "/api/auth/reset-password",
+            "/api/shares/public/",
             "/actuator/",
             "/v3/api-docs",
             "/swagger-ui/",

@@ -9,8 +9,6 @@ import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.function.Function;
-
 /**
  * Programmatic route definitions for the API Gateway.
  * <p>
@@ -53,7 +51,7 @@ public class RouteConfig {
                 .route("user-service",   r -> apiRoute(r, "/api/users/**",        userService))
                 .route("file-service",   r -> apiRoute(r, "/api/files/**",        fileService))
                 .route("folder-service", r -> apiRoute(r, "/api/folders/**",      folderService))
-                .route("share-service",  r -> apiRoute(r, "/api/share/**",        shareService))
+                .route("share-service",  r -> apiRoute(r, "/api/shares/**",       shareService))
                 .route("notification-service", r -> apiRoute(r, "/api/notifications/**", notificationService))
                 .build();
     }
@@ -63,10 +61,8 @@ public class RouteConfig {
     /**
      * Builds a route whose predicate matches the given {@code pathPattern}
      * and forwards to the {@code lb://<serviceName>} load-balanced URI.
-     * <p>
-     * The full request path is forwarded as-is so that downstream services
-     * receive the original {@code /api/<service>/...} URL, matching their
-     * controller mappings and security configurations.
+     * The full request path (including the {@code /api} prefix) is forwarded
+     * as-is to the downstream service.
      *
      * @param spec        the predicate spec (route builder entry point)
      * @param pathPattern the request path pattern to match, e.g. {@code /api/auth/**}

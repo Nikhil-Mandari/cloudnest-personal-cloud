@@ -11,9 +11,12 @@ spring:
         - DedupeResponseHeader=Access-Control-Allow-Origin
 
 eureka:
+  instance:
+    # Register with the container IP (required for Docker: hostname is an unresolvable container ID)
+    prefer-ip-address: true
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
     register-with-eureka: true
     fetch-registry: true
 

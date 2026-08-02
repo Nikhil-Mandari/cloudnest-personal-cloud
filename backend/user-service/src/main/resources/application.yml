@@ -13,14 +13,15 @@ spring:
   application:
     name: user-service
 
+  # Defaults to localhost for local development; override CONFIG_SERVER_URL in Docker.
   config:
-    import: optional:configserver:http://localhost:8888
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
 
 # ── Eureka Service Discovery ──────────────────────────────
 eureka:
   client:
     service-url:
-      defaultZone: http://localhost:8761/eureka/
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
     register-with-eureka: true
     fetch-registry: true
 
