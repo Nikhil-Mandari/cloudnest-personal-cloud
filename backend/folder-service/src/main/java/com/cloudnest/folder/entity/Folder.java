@@ -46,7 +46,7 @@ public class Folder {
      */
     @Id
     @GeneratedValue(strategy = GenerationType.UUID)
-    @Column(name = "id", nullable = false, updatable = false, length = 36)
+    @Column(name = "id", nullable = false, updatable = false)
     private UUID id;
 
     /**
@@ -60,13 +60,13 @@ public class Folder {
     /**
      * ID of the user who owns this folder.
      */
-    @Column(name = "owner_id", nullable = false, length = 36)
-    private UUID ownerId;
+    @Column(name = "owner_id", nullable = false)
+    private Long ownerId;
 
     /**
      * ID of the parent folder (nullable for root-level folders).
      */
-    @Column(name = "parent_folder_id", length = 36)
+    @Column(name = "parent_folder_id")
     private UUID parentFolderId;
 
     /**

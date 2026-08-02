@@ -56,7 +56,7 @@ public class FolderController {
      */
     @PostMapping
     public ResponseEntity<StandardResponse<FolderResponse>> createFolder(
-            @RequestHeader("X-User-Id") UUID userIdHeader,
+            @RequestHeader("X-User-Id") Long userIdHeader,
             @Valid @RequestBody CreateFolderRequest request,
             HttpServletRequest httpRequest) {
 
@@ -86,7 +86,7 @@ public class FolderController {
     @PutMapping("/{id}")
     public ResponseEntity<StandardResponse<FolderResponse>> renameFolder(
             @PathVariable UUID id,
-            @RequestHeader("X-User-Id") UUID userIdHeader,
+            @RequestHeader("X-User-Id") Long userIdHeader,
             @Valid @RequestBody UpdateFolderRequest request,
             HttpServletRequest httpRequest) {
 
@@ -115,7 +115,7 @@ public class FolderController {
     @DeleteMapping("/{id}")
     public ResponseEntity<StandardResponse<Void>> deleteFolder(
             @PathVariable UUID id,
-            @RequestHeader("X-User-Id") UUID userIdHeader,
+            @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
 
         log.info("DELETE /api/folders/{} - userId={}", id, userIdHeader);
@@ -141,7 +141,7 @@ public class FolderController {
     @GetMapping("/{id}")
     public ResponseEntity<StandardResponse<FolderResponse>> getFolder(
             @PathVariable UUID id,
-            @RequestHeader("X-User-Id") UUID userIdHeader,
+            @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
 
         log.info("GET /api/folders/{} - userId={}", id, userIdHeader);
@@ -166,7 +166,7 @@ public class FolderController {
      */
     @GetMapping
     public ResponseEntity<StandardResponse<List<FolderResponse>>> getAllFolders(
-            @RequestHeader("X-User-Id") UUID userIdHeader,
+            @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
 
         log.info("GET /api/folders - userId={}", userIdHeader);
@@ -192,7 +192,7 @@ public class FolderController {
      */
     @GetMapping("/root")
     public ResponseEntity<StandardResponse<List<FolderResponse>>> getRootFolders(
-            @RequestHeader("X-User-Id") UUID userIdHeader,
+            @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
 
         log.info("GET /api/folders/root - userId={}", userIdHeader);
@@ -219,7 +219,7 @@ public class FolderController {
     @GetMapping("/{id}/children")
     public ResponseEntity<StandardResponse<List<FolderResponse>>> getFolderChildren(
             @PathVariable UUID id,
-            @RequestHeader("X-User-Id") UUID userIdHeader,
+            @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
 
         log.info("GET /api/folders/{}/children - userId={}", id, userIdHeader);
@@ -250,7 +250,7 @@ public class FolderController {
     @PutMapping("/{id}/move")
     public ResponseEntity<StandardResponse<FolderResponse>> moveFolder(
             @PathVariable UUID id,
-            @RequestHeader("X-User-Id") UUID userIdHeader,
+            @RequestHeader("X-User-Id") Long userIdHeader,
             @Valid @RequestBody MoveFolderRequest request,
             HttpServletRequest httpRequest) {
 
