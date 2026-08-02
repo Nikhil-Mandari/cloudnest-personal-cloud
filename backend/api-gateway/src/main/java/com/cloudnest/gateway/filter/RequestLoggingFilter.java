@@ -3,6 +3,8 @@ package com.cloudnest.gateway.filter;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.cloud.gateway.filter.GatewayFilterChain;
 import org.springframework.cloud.gateway.filter.GlobalFilter;
+import org.springframework.cloud.gateway.route.Route;
+import org.springframework.cloud.gateway.support.ServerWebExchangeUtils;
 import org.springframework.core.Ordered;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
@@ -47,10 +49,8 @@ public class RequestLoggingFilter implements GlobalFilter, Ordered {
         exchange.getResponse().getHeaders().add(REQUEST_ID_HEADER, requestId);
 
         // Determine the target route ID (set by RouteToRequestUrlFilter)
-        String routeId = exchange.getAttributeOrDefault(
-                org.springframework.cloud.gateway.support.ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR,
-                "unknown"
-        );
+        Route matchedRoute = exchange.getAttribute(ServerWebExchangeUtils.GATEWAY_ROUTE_ATTR);
+        String routeId = matchedRoute != null ? matchedRoute.getId() : "unknown";
 
         log.info("[{}] → {} {} (route: {})",
                 requestId, request.getMethod(), request.getURI().getPath(), routeId);

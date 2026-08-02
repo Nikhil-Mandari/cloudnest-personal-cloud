@@ -38,7 +38,17 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     /** Paths that do NOT require authentication. */
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/auth/register",
-            "/api/auth/login"
+            "/api/auth/login",
+            "/api/auth/refresh",
+            "/api/auth/forgot-password",
+            "/api/auth/reset-password",
+            "/api/shares/public/",
+            "/actuator/",
+            "/v3/api-docs",
+            "/swagger-ui/",
+            "/swagger-ui.html",
+            "/webjars/",
+            "/favicon.ico"
     );
 
     /** Header through which the user ID is forwarded to downstream services. */

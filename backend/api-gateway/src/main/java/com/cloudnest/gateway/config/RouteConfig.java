@@ -9,8 +9,6 @@ import org.springframework.cloud.gateway.route.builder.RouteLocatorBuilder;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
-import java.util.function.Function;
-
 /**
  * Programmatic route definitions for the API Gateway.
  * <p>
@@ -43,7 +41,7 @@ public class RouteConfig {
 
     /**
      * Registers all downstream service routes.
-     * Each route strips the {@code /api/<service>} prefix before forwarding.
+     * Each route forwards the full path (including /api) to downstream services.
      */
     @Bean
     public RouteLocator gatewayRoutes(RouteLocatorBuilder builder) {
@@ -52,7 +50,7 @@ public class RouteConfig {
                 .route("user-service",   r -> apiRoute(r, "/api/users/**",        userService))
                 .route("file-service",   r -> apiRoute(r, "/api/files/**",        fileService))
                 .route("folder-service", r -> apiRoute(r, "/api/folders/**",      folderService))
-                .route("share-service",  r -> apiRoute(r, "/api/share/**",        shareService))
+                .route("share-service",  r -> apiRoute(r, "/api/shares/**",       shareService))
                 .route("notification-service", r -> apiRoute(r, "/api/notifications/**", notificationService))
                 .build();
     }
@@ -62,9 +60,8 @@ public class RouteConfig {
     /**
      * Builds a route whose predicate matches the given {@code pathPattern}
      * and forwards to the {@code lb://<serviceName>} load-balanced URI.
-     * <p>
-     * The {@code stripPrefix=1} ensures the leading path segment (e.g.
-     * {@code /api}) is removed before reaching the downstream service.
+     * The full request path (including the {@code /api} prefix) is forwarded
+     * as-is to the downstream service.
      *
      * @param spec        the predicate spec (route builder entry point)
      * @param pathPattern the request path pattern to match, e.g. {@code /api/auth/**}
@@ -74,7 +71,6 @@ public class RouteConfig {
     private Buildable<Route> apiRoute(PredicateSpec spec, String pathPattern, String serviceName) {
         return spec
                 .path(pathPattern)
-                .filters(f -> f.stripPrefix(1))
                 .uri("lb://" + serviceName);
     }
 }
