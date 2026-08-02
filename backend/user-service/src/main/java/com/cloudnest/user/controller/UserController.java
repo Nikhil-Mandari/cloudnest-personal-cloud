@@ -1,5 +1,6 @@
 package com.cloudnest.user.controller;
 
+import com.cloudnest.user.dto.CreateUserRequest;
 import com.cloudnest.user.dto.UpdateProfileRequest;
 import com.cloudnest.user.dto.UserProfileResponse;
 import com.cloudnest.user.service.UserService;
@@ -12,6 +13,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -37,6 +39,35 @@ public class UserController {
 
     public UserController(UserService userService) {
         this.userService = userService;
+    }
+
+    /**
+     * Creates a new user profile.
+     * <p>
+     * This endpoint is called by the Auth Service after successful registration
+     * to create the corresponding profile record.
+     *
+     * @param request    the user creation payload
+     * @param httpRequest the current HTTP request (for building response path)
+     * @return 201 Created with the newly created user profile
+     */
+    @PostMapping
+    public ResponseEntity<StandardResponse<UserProfileResponse>> createUser(
+            @Valid @RequestBody CreateUserRequest request,
+            HttpServletRequest httpRequest) {
+
+        log.info("POST /api/users - username={}, email={}",
+                request.getUsername(), request.getEmail());
+
+        UserProfileResponse profile = userService.createUser(request);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(StandardResponse.<UserProfileResponse>builder()
+                        .success(true)
+                        .message("User profile created successfully")
+                        .data(profile)
+                        .path(httpRequest.getRequestURI())
+                        .build());
     }
 
     /**

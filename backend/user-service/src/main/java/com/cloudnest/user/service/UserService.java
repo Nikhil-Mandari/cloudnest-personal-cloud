@@ -1,5 +1,6 @@
 package com.cloudnest.user.service;
 
+import com.cloudnest.user.dto.CreateUserRequest;
 import com.cloudnest.user.dto.UpdateProfileRequest;
 import com.cloudnest.user.dto.UserProfileResponse;
 
@@ -9,6 +10,14 @@ import java.util.List;
  * Service interface for user profile operations.
  */
 public interface UserService {
+
+    /**
+     * Creates a new user profile.
+     *
+     * @param request the user creation payload
+     * @return the created user profile
+     */
+    UserProfileResponse createUser(CreateUserRequest request);
 
     /**
      * Retrieves the profile of the currently authenticated user.
