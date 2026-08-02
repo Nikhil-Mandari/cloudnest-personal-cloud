@@ -26,7 +26,7 @@ public class FolderResponse {
 
     private UUID id;
     private String name;
-    private UUID ownerId;
+    private Long ownerId;
     private UUID parentFolderId;
     private String path;
     private Integer level;

@@ -27,7 +27,7 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
      * @return {@code true} if a non-deleted folder with that name exists at that location
      */
     boolean existsByOwnerIdAndParentFolderIdAndNameAndDeletedFalse(
-            UUID ownerId, UUID parentFolderId, String name);
+            Long ownerId, UUID parentFolderId, String name);
 
     /**
      * Finds all folders belonging to a specific owner (including deleted).
@@ -35,7 +35,7 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
      * @param ownerId the owner's UUID
      * @return a list of folders owned by the specified user
      */
-    List<Folder> findByOwnerId(UUID ownerId);
+    List<Folder> findByOwnerId(Long ownerId);
 
     /**
      * Finds all non-deleted folders belonging to a specific owner.
@@ -43,7 +43,7 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
      * @param ownerId the owner's UUID
      * @return a list of active folders owned by the specified user
      */
-    List<Folder> findByOwnerIdAndDeletedFalse(UUID ownerId);
+    List<Folder> findByOwnerIdAndDeletedFalse(Long ownerId);
 
     /**
      * Finds all folders with a specific parent folder ID (including deleted).
@@ -68,7 +68,7 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
      * @param parentFolderId the parent folder's UUID
      * @return a list of folders matching the owner and parent
      */
-    List<Folder> findByOwnerIdAndParentFolderId(UUID ownerId, UUID parentFolderId);
+    List<Folder> findByOwnerIdAndParentFolderId(Long ownerId, UUID parentFolderId);
 
     /**
      * Finds all non-deleted folders owned by a user under a specific parent.
@@ -77,7 +77,7 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
      * @param parentFolderId the parent folder's UUID
      * @return a list of active folders matching the owner and parent
      */
-    List<Folder> findByOwnerIdAndParentFolderIdAndDeletedFalse(UUID ownerId, UUID parentFolderId);
+    List<Folder> findByOwnerIdAndParentFolderIdAndDeletedFalse(Long ownerId, UUID parentFolderId);
 
     /**
      * Finds a folder by its exact hierarchical path.
@@ -94,7 +94,7 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
      * @param path    the folder path (e.g. "/Documents/Java")
      * @return an {@link Optional} containing the matching folder, or empty if not found
      */
-    Optional<Folder> findByOwnerIdAndPath(UUID ownerId, String path);
+    Optional<Folder> findByOwnerIdAndPath(Long ownerId, String path);
 
     /**
      * Finds all folders whose path starts with the given prefix.

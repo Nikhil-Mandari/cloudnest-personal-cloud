@@ -30,7 +30,7 @@ public interface FolderService {
      * @param request the creation payload (name + optional parentFolderId)
      * @return the created folder's response
      */
-    FolderResponse createFolder(UUID ownerId, CreateFolderRequest request);
+    FolderResponse createFolder(Long ownerId, CreateFolderRequest request);
 
     /**
      * Renames a folder and recursively updates all child folder paths.
@@ -40,7 +40,7 @@ public interface FolderService {
      * @param request  the rename payload containing the new name
      * @return the updated folder's response
      */
-    FolderResponse renameFolder(UUID folderId, UUID ownerId, UpdateFolderRequest request);
+    FolderResponse renameFolder(UUID folderId, Long ownerId, UpdateFolderRequest request);
 
     /**
      * Soft-deletes a folder and recursively soft-deletes all child folders.
@@ -48,7 +48,7 @@ public interface FolderService {
      * @param folderId the UUID of the folder to delete
      * @param ownerId  the authenticated user's UUID
      */
-    void deleteFolder(UUID folderId, UUID ownerId);
+    void deleteFolder(UUID folderId, Long ownerId);
 
     /**
      * Moves a folder to a different parent folder.
@@ -66,7 +66,7 @@ public interface FolderService {
      * @param request  the move payload containing the destination folder ID
      * @return the updated folder's response
      */
-    FolderResponse moveFolder(UUID folderId, UUID ownerId, MoveFolderRequest request);
+    FolderResponse moveFolder(UUID folderId, Long ownerId, MoveFolderRequest request);
 
     /**
      * Retrieves a single folder by its UUID.
@@ -75,7 +75,7 @@ public interface FolderService {
      * @param ownerId  the authenticated user's UUID
      * @return the folder's response
      */
-    FolderResponse getFolder(UUID folderId, UUID ownerId);
+    FolderResponse getFolder(UUID folderId, Long ownerId);
 
     /**
      * Retrieves all non-deleted folders for the authenticated user.
@@ -83,7 +83,7 @@ public interface FolderService {
      * @param ownerId the authenticated user's UUID
      * @return a list of folder responses
      */
-    List<FolderResponse> getAllFolders(UUID ownerId);
+    List<FolderResponse> getAllFolders(Long ownerId);
 
     /**
      * Retrieves all root-level folders (parentFolderId is null) for the authenticated user.
@@ -91,7 +91,7 @@ public interface FolderService {
      * @param ownerId the authenticated user's UUID
      * @return a list of root folder responses
      */
-    List<FolderResponse> getRootFolders(UUID ownerId);
+    List<FolderResponse> getRootFolders(Long ownerId);
 
     /**
      * Retrieves the immediate children of a specific folder.
@@ -100,5 +100,5 @@ public interface FolderService {
      * @param ownerId        the authenticated user's UUID
      * @return a list of child folder responses
      */
-    List<FolderResponse> getFolderChildren(UUID parentFolderId, UUID ownerId);
+    List<FolderResponse> getFolderChildren(UUID parentFolderId, Long ownerId);
 }
