@@ -54,7 +54,7 @@ public class FolderServiceImpl implements FolderService {
      * Generates the folder path and level automatically.
      */
     @Override
-    public FolderResponse createFolder(UUID ownerId, CreateFolderRequest request) {
+    public FolderResponse createFolder(Long ownerId, CreateFolderRequest request) {
         log.debug("Creating folder: name='{}', ownerId={}, parentFolderId={}",
                 request.getName(), ownerId, request.getParentFolderId());
 
@@ -122,7 +122,7 @@ public class FolderServiceImpl implements FolderService {
      * the entire subtree.
      */
     @Override
-    public FolderResponse renameFolder(UUID folderId, UUID ownerId, UpdateFolderRequest request) {
+    public FolderResponse renameFolder(UUID folderId, Long ownerId, UpdateFolderRequest request) {
         log.debug("Renaming folder: id={}, newName='{}'", folderId, request.getName());
 
         Folder folder = findActiveFolderByIdAndOwner(folderId, ownerId);
@@ -161,7 +161,7 @@ public class FolderServiceImpl implements FolderService {
      * Soft-deletes a folder and recursively soft-deletes all child folders.
      */
     @Override
-    public void deleteFolder(UUID folderId, UUID ownerId) {
+    public void deleteFolder(UUID folderId, Long ownerId) {
         log.debug("Soft-deleting folder: id={}", folderId);
 
         Folder folder = findActiveFolderByIdAndOwner(folderId, ownerId);
@@ -188,7 +188,7 @@ public class FolderServiceImpl implements FolderService {
      * Recursively updates all child folder paths after the move.
      */
     @Override
-    public FolderResponse moveFolder(UUID folderId, UUID ownerId, MoveFolderRequest request) {
+    public FolderResponse moveFolder(UUID folderId, Long ownerId, MoveFolderRequest request) {
         log.debug("Moving folder: id={}, destinationFolderId={}",
                 folderId, request.getDestinationFolderId());
 
@@ -261,7 +261,7 @@ public class FolderServiceImpl implements FolderService {
      */
     @Override
     @Transactional(readOnly = true)
-    public FolderResponse getFolder(UUID folderId, UUID ownerId) {
+    public FolderResponse getFolder(UUID folderId, Long ownerId) {
         log.debug("Fetching folder: id={}, ownerId={}", folderId, ownerId);
 
         Folder folder = findActiveFolderByIdAndOwner(folderId, ownerId);
@@ -277,7 +277,7 @@ public class FolderServiceImpl implements FolderService {
      */
     @Override
     @Transactional(readOnly = true)
-    public List<FolderResponse> getAllFolders(UUID ownerId) {
+    public List<FolderResponse> getAllFolders(Long ownerId) {
         log.debug("Fetching all folders for ownerId={}", ownerId);
 
         return folderRepository.findByOwnerIdAndDeletedFalse(ownerId)
@@ -296,7 +296,7 @@ public class FolderServiceImpl implements FolderService {
      */
     @Override
     @Transactional(readOnly = true)
-    public List<FolderResponse> getRootFolders(UUID ownerId) {
+    public List<FolderResponse> getRootFolders(Long ownerId) {
         log.debug("Fetching root folders for ownerId={}", ownerId);
 
         // Root folders are those where parentFolderId is null and not deleted
@@ -316,7 +316,7 @@ public class FolderServiceImpl implements FolderService {
      */
     @Override
     @Transactional(readOnly = true)
-    public List<FolderResponse> getFolderChildren(UUID parentFolderId, UUID ownerId) {
+    public List<FolderResponse> getFolderChildren(UUID parentFolderId, Long ownerId) {
         log.debug("Fetching children for folder: parentFolderId={}, ownerId={}",
                 parentFolderId, ownerId);
 
@@ -427,7 +427,7 @@ public class FolderServiceImpl implements FolderService {
      * @return the found Folder entity
      * @throws FolderNotFoundException if no active folder exists with the given ID and owner
      */
-    private Folder findActiveFolderByIdAndOwner(UUID id, UUID ownerId) {
+    private Folder findActiveFolderByIdAndOwner(UUID id, Long ownerId) {
         Folder folder = folderRepository.findById(id)
                 .orElseThrow(() -> {
                     log.warn("Folder not found: id={}", id);

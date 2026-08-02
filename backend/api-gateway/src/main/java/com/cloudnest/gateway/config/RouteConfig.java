@@ -41,7 +41,8 @@ public class RouteConfig {
 
     /**
      * Registers all downstream service routes.
-     * Each route forwards the full path (including /api) to downstream services.
+     * Each route forwards the full request path to the downstream service
+     * (e.g. {@code /api/auth/register} is forwarded as-is to the auth service).
      */
     @Bean
     public RouteLocator gatewayRoutes(RouteLocatorBuilder builder) {
