@@ -22,6 +22,7 @@
         <spring-cloud.version>2025.0.0</spring-cloud.version>
         <springdoc.version>2.8.6</springdoc.version>
         <mapstruct.version>1.6.3</mapstruct.version>
+        <minio.version>8.5.17</minio.version>
     </properties>
 
     <dependencies>
@@ -72,6 +73,19 @@
             <groupId>org.mapstruct</groupId>
             <artifactId>mapstruct</artifactId>
             <version>${mapstruct.version}</version>
+        </dependency>
+
+        <!-- OpenFeign (cross-service calls, e.g. Folder Service validation) -->
+        <dependency>
+            <groupId>org.springframework.cloud</groupId>
+            <artifactId>spring-cloud-starter-openfeign</artifactId>
+        </dependency>
+
+        <!-- MinIO Object Storage SDK -->
+        <dependency>
+            <groupId>io.minio</groupId>
+            <artifactId>minio</artifactId>
+            <version>${minio.version}</version>
         </dependency>
 
         <!-- OpenAPI / Swagger -->

@@ -23,6 +23,10 @@ public interface FileMapper {
 
     /**
      * Converts an upload request into a new {@link FileMetadata} entity.
+     * <p>
+     * Storage-derived fields ({@code objectName}, {@code bucketName},
+     * {@code storagePath}, {@code uploadedAt}, {@code fileId},
+     * {@code storedFileName}) are set by the service after upload.
      *
      * @param request the upload request
      * @return a new FileMetadata entity with fields populated from the request
@@ -30,7 +34,12 @@ public interface FileMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "fileId", ignore = true)
     @Mapping(target = "storedFileName", ignore = true)
+    @Mapping(target = "objectName", ignore = true)
+    @Mapping(target = "bucketName", ignore = true)
+    @Mapping(target = "storagePath", ignore = true)
+    @Mapping(target = "fileType", source = "contentType")
     @Mapping(target = "status", ignore = true)
+    @Mapping(target = "uploadedAt", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     FileMetadata toEntity(UploadFileRequest request);
@@ -66,12 +75,16 @@ public interface FileMapper {
     @Mapping(target = "id", ignore = true)
     @Mapping(target = "fileId", ignore = true)
     @Mapping(target = "storedFileName", ignore = true)
+    @Mapping(target = "objectName", ignore = true)
+    @Mapping(target = "bucketName", ignore = true)
+    @Mapping(target = "contentType", ignore = true)
     @Mapping(target = "fileSize", ignore = true)
     @Mapping(target = "storagePath", ignore = true)
     @Mapping(target = "ownerId", ignore = true)
     @Mapping(target = "folderId", ignore = true)
     @Mapping(target = "checksum", ignore = true)
     @Mapping(target = "status", ignore = true)
+    @Mapping(target = "uploadedAt", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)
     void applyUpdate(@MappingTarget FileMetadata entity, UpdateFileRequest request);
