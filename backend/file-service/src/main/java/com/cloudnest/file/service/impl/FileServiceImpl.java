@@ -1,80 +1,168 @@
 package com.cloudnest.file.service.impl;
 
+import com.cloudnest.file.client.FolderServiceClient;
+import com.cloudnest.file.config.MinioProperties;
+import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
+import com.cloudnest.file.dto.FolderResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
 import com.cloudnest.file.entity.FileMetadata;
 import com.cloudnest.file.entity.FileMetadata.FileStatus;
 import com.cloudnest.file.exception.BadRequestException;
 import com.cloudnest.file.exception.DuplicateResourceException;
+import com.cloudnest.file.exception.FileStorageException;
+import com.cloudnest.file.exception.FileTooLargeException;
+import com.cloudnest.file.exception.ForbiddenException;
 import com.cloudnest.file.exception.ResourceNotFoundException;
+import com.cloudnest.file.exception.UnauthorizedException;
 import com.cloudnest.file.mapper.FileMapper;
 import com.cloudnest.file.repository.FileMetadataRepository;
 import com.cloudnest.file.service.FileService;
+import com.cloudnest.file.service.MinioService;
+import com.cloudnest.file.util.ChecksumUtil;
+import com.cloudnest.file.util.FileNameUtil;
+import com.cloudnest.file.util.StandardResponse;
+import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.multipart.MultipartFile;
 
+import java.io.IOException;
+import java.io.InputStream;
+import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
 /**
  * Implementation of the {@link FileService} interface.
  * <p>
- * Handles all file metadata management operations including CRUD,
- * soft-delete, restore, search, and folder movement.
+ * Orchestrates the MinIO-backed file lifecycle: binary content is uploaded to /
+ * read from MinIO object storage, while metadata (object key, bucket, content
+ * type, size, SHA-256 checksum) is persisted in MySQL. Every mutation is
+ * ownership-checked against the authenticated user.
  */
 @Slf4j
 @Service
 @Transactional
 public class FileServiceImpl implements FileService {
 
+    /** MIME types that support in-browser preview. */
+    private static final Set<String> PREVIEWABLE_CONTENT_TYPES = Set.of(
+            "application/pdf",
+            "image/png",
+            "image/jpeg",
+            "image/jpg",
+            "image/gif",
+            "text/plain"
+    );
+
+    private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
+
     private final FileMetadataRepository fileMetadataRepository;
     private final FileMapper fileMapper;
+    private final MinioService minioService;
+    private final MinioProperties minioProperties;
+    private final FolderServiceClient folderServiceClient;
 
-    public FileServiceImpl(FileMetadataRepository fileMetadataRepository, FileMapper fileMapper) {
+    public FileServiceImpl(
+            FileMetadataRepository fileMetadataRepository,
+            FileMapper fileMapper,
+            MinioService minioService,
+            MinioProperties minioProperties,
+            FolderServiceClient folderServiceClient) {
         this.fileMetadataRepository = fileMetadataRepository;
         this.fileMapper = fileMapper;
+        this.minioService = minioService;
+        this.minioProperties = minioProperties;
+        this.folderServiceClient = folderServiceClient;
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Upload
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Registers new file metadata after an upload.
-     * Generates a unique file ID (UUID) and a stored file name to prevent collisions.
+     * Validates the upload, computes the SHA-256 checksum, uploads the binary
+     * content to MinIO, then persists the metadata in MySQL.
+     * <p>
+     * If persisting the metadata fails, the just-uploaded object is removed
+     * from MinIO (rollback) so no orphaned objects remain.
      */
     @Override
-    public FileResponse uploadFileMetadata(UploadFileRequest request) {
-        log.debug("Uploading file metadata: originalFileName='{}', ownerId={}",
-                request.getOriginalFileName(), request.getOwnerId());
+    public FileResponse uploadFile(UploadFileRequest request, MultipartFile file) {
+        log.debug("Uploading file: originalFileName='{}', ownerId={}, folderId={}",
+                request.getOriginalFileName(), request.getOwnerId(), request.getFolderId());
 
-        // ── Generate a unique file ID and stored file name ──────────────────────
-        String fileId = UUID.randomUUID().toString();
-        String storedFileName = generateStoredFileName(request.getOriginalFileName());
+        // ── Validate the request ─────────────────────────────────────────────
+        validateOwner(request.getOwnerId());
+        validateFileForUpload(file);
+        validateFolder(request.getFolderId(), request.getOwnerId());
 
-        // ── Ensure stored file name uniqueness ──────────────────────────────────
-        if (fileMetadataRepository.existsByStoredFileName(storedFileName)) {
-            log.warn("Stored file name collision: {}", storedFileName);
-            throw new DuplicateResourceException(
-                    "Stored file name '" + storedFileName + "' already exists");
+        // ── Derive storage metadata ───────────────────────────────────────────
+        String originalFileName = FileNameUtil.sanitizeFileName(request.getOriginalFileName());
+        String contentType = resolveContentType(request.getContentType());
+        String objectName = FileNameUtil.generateObjectName(originalFileName);
+
+        // ── Compute SHA-256 checksum while the content is available ───────────
+        String checksum;
+        try (InputStream checksumStream = file.getInputStream()) {
+            checksum = ChecksumUtil.sha256Hex(checksumStream);
+        } catch (IOException e) {
+            throw new FileStorageException("Failed to read uploaded file content", e);
+        }
+        request.setChecksum(checksum);
+
+        // ── Upload binary content to MinIO ────────────────────────────────────
+        try (InputStream uploadStream = file.getInputStream()) {
+            minioService.uploadObject(objectName, uploadStream, file.getSize(), contentType);
+        } catch (IOException e) {
+            throw new FileStorageException("Failed to read uploaded file content", e);
         }
 
-        // ── Map request to entity and populate generated fields ─────────────────
-        FileMetadata fileMetadata = fileMapper.toEntity(request);
-        fileMetadata.setFileId(fileId);
-        fileMetadata.setStoredFileName(storedFileName);
+        // ── Persist metadata into MySQL (rollback object on failure) ──────────
+        FileMetadata metadata = fileMapper.toEntity(request);
+        metadata.setFileId(UUID.randomUUID().toString());
+        metadata.setObjectName(objectName);
+        metadata.setStoredFileName(objectName);
+        metadata.setBucketName(minioProperties.getBucketName());
+        metadata.setStoragePath(minioProperties.getBucketName() + "/" + objectName);
+        metadata.setUploadedAt(LocalDateTime.now());
 
-        // ── Persist and return ──────────────────────────────────────────────────
-        FileMetadata saved = fileMetadataRepository.save(fileMetadata);
-        log.info("File metadata uploaded successfully: fileId={}, storedFileName={}",
-                saved.getFileId(), saved.getStoredFileName());
+        FileMetadata saved;
+        try {
+            saved = fileMetadataRepository.save(metadata);
+        } catch (RuntimeException e) {
+            log.error("Metadata persistence failed for object '{}' — rolling back MinIO upload: {}",
+                    objectName, e.getMessage());
+            try {
+                minioService.deleteObject(objectName);
+            } catch (RuntimeException rollbackEx) {
+                log.error("Failed to roll back object '{}' after metadata persistence failure",
+                        objectName, rollbackEx);
+            }
+            throw e;
+        }
+
+        log.info("File uploaded successfully: id={}, fileId={}, objectName={}, size={}, checksum={}",
+                saved.getId(), saved.getFileId(), saved.getObjectName(), saved.getFileSize(),
+                saved.getChecksum());
 
         return fileMapper.toFileResponse(saved);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Read
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
      * Retrieves all active file metadata records for a specific owner.
-     * Filters out soft-deleted records.
+     * Filters out soft-deleted (legacy) records.
      */
     @Override
     @Transactional(readOnly = true)
@@ -90,20 +178,23 @@ public class FileServiceImpl implements FileService {
 
     /**
      * Retrieves detailed file metadata by its internal ID.
-     * Includes soft-deleted records for admin/internal use.
+     * <p>
+     * Ownership is enforced when an owner context is supplied (external API
+     * calls); internal Feign consumers (e.g. Share Service) pass {@code null}.
      */
     @Override
     @Transactional(readOnly = true)
-    public FileResponse getFileById(Long id) {
+    public FileResponse getFileById(Long id, Long ownerId) {
         log.debug("Fetching file by id={}", id);
 
         FileMetadata fileMetadata = findFileById(id);
+        assertOwner(fileMetadata, ownerId);
         return fileMapper.toFileResponse(fileMetadata);
     }
 
     /**
      * Retrieves detailed file metadata by its public-facing file ID (UUID).
-     * Includes soft-deleted records for admin/internal use.
+     * Internal access — no ownership context.
      */
     @Override
     @Transactional(readOnly = true)
@@ -119,20 +210,20 @@ public class FileServiceImpl implements FileService {
         return fileMapper.toFileResponse(fileMetadata);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Rename (metadata only)
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
      * Updates select fields of an existing file metadata record.
      * Only the fields provided in the request are updated.
+     * The MinIO object key is never renamed.
      */
     @Override
-    public FileResponse updateFileDetails(Long id, UpdateFileRequest request) {
-        log.debug("Updating file metadata: id={}", id);
+    public FileResponse updateFileDetails(Long id, UpdateFileRequest request, Long ownerId) {
+        log.debug("Updating file metadata: id={}, ownerId={}", id, ownerId);
 
-        FileMetadata fileMetadata = findFileById(id);
-
-        // ── Check for soft-deleted files ────────────────────────────────────────
-        if (fileMetadata.getStatus() == FileStatus.DELETED) {
-            throw new BadRequestException("Cannot update a deleted file. Restore it first.");
-        }
+        FileMetadata fileMetadata = findActiveOwnedFile(id, ownerId);
 
         // ── Apply partial update via MapStruct ──────────────────────────────────
         fileMapper.applyUpdate(fileMetadata, request);
@@ -144,19 +235,22 @@ public class FileServiceImpl implements FileService {
         return fileMapper.toFileResponse(saved);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Move (metadata only)
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Moves a file to a different folder.
+     * Moves a file to a different folder — only the {@code folderId} is
+     * updated; the MinIO object is never moved.
      */
     @Override
-    public FileResponse moveFile(Long id, Long newFolderId) {
-        log.debug("Moving file: id={}, newFolderId={}", id, newFolderId);
+    public FileResponse moveFile(Long id, String newFolderId, Long ownerId) {
+        log.debug("Moving file: id={}, newFolderId={}, ownerId={}", id, newFolderId, ownerId);
 
-        FileMetadata fileMetadata = findFileById(id);
+        FileMetadata fileMetadata = findActiveOwnedFile(id, ownerId);
 
-        // ── Check for soft-deleted files ────────────────────────────────────────
-        if (fileMetadata.getStatus() == FileStatus.DELETED) {
-            throw new BadRequestException("Cannot move a deleted file. Restore it first.");
-        }
+        // ── Validate the destination folder (if moving into one) ──────────────
+        validateFolder(newFolderId, ownerId);
 
         fileMetadata.setFolderId(newFolderId);
         FileMetadata saved = fileMetadataRepository.save(fileMetadata);
@@ -167,35 +261,40 @@ public class FileServiceImpl implements FileService {
         return fileMapper.toFileResponse(saved);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Delete (hard delete: MinIO object + MySQL row)
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
-     * Soft-deletes a file record by setting its status to {@code DELETED}.
+     * Hard-deletes a file: removes the object from MinIO first, then deletes
+     * the metadata row from MySQL. If the MinIO deletion fails, nothing is
+     * deleted (rollback-safe).
      */
     @Override
-    public void deleteFile(Long id) {
-        log.debug("Soft-deleting file: id={}", id);
+    public void deleteFile(Long id, Long ownerId) {
+        log.debug("Hard-deleting file: id={}, ownerId={}", id, ownerId);
 
-        FileMetadata fileMetadata = findFileById(id);
+        FileMetadata fileMetadata = findOwnedFile(id, ownerId);
 
-        if (fileMetadata.getStatus() == FileStatus.DELETED) {
-            log.warn("File is already deleted: id={}", id);
-            throw new BadRequestException("File is already deleted");
-        }
+        // ── 1. Remove the object from MinIO ────────────────────────────────────
+        minioService.deleteObject(fileMetadata.getObjectName());
 
-        fileMetadata.setStatus(FileStatus.DELETED);
-        fileMetadataRepository.save(fileMetadata);
+        // ── 2. Delete the metadata row from MySQL ──────────────────────────────
+        fileMetadataRepository.delete(fileMetadata);
 
-        log.info("File soft-deleted successfully: id={}, fileId={}",
-                id, fileMetadata.getFileId());
+        log.info("File deleted successfully: id={}, fileId={}, objectName={}",
+                id, fileMetadata.getFileId(), fileMetadata.getObjectName());
     }
 
     /**
-     * Restores a soft-deleted file record by setting its status back to {@code ACTIVE}.
+     * Restores a soft-deleted (legacy) file record by setting its status back
+     * to {@code ACTIVE}.
      */
     @Override
-    public FileResponse restoreFile(Long id) {
-        log.debug("Restoring soft-deleted file: id={}", id);
+    public FileResponse restoreFile(Long id, Long ownerId) {
+        log.debug("Restoring soft-deleted file: id={}, ownerId={}", id, ownerId);
 
-        FileMetadata fileMetadata = findFileById(id);
+        FileMetadata fileMetadata = findOwnedFile(id, ownerId);
 
         if (fileMetadata.getStatus() == FileStatus.ACTIVE) {
             log.warn("File is already active: id={}", id);
@@ -211,6 +310,105 @@ public class FileServiceImpl implements FileService {
         return fileMapper.toFileResponse(saved);
     }
 
+    // ─────────────────────────────────────────────────────────────────────────
+    // Download & Preview
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Streams the file's binary content from MinIO for download.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public FileDownloadResponse downloadFile(Long id, Long ownerId) {
+        log.debug("Downloading file: id={}, ownerId={}", id, ownerId);
+
+        FileMetadata fileMetadata = findActiveOwnedFile(id, ownerId);
+        InputStream content = minioService.getObject(fileMetadata.getObjectName());
+
+        log.info("File download stream opened: id={}, fileId={}, objectName={}",
+                id, fileMetadata.getFileId(), fileMetadata.getObjectName());
+
+        return FileDownloadResponse.builder()
+                .originalFileName(fileMetadata.getOriginalFileName())
+                .contentType(fileMetadata.getContentType())
+                .fileSize(fileMetadata.getFileSize())
+                .inputStream(content)
+                .build();
+    }
+
+    /**
+     * Streams the file's binary content from MinIO for in-browser preview.
+     * Rejects content types that are not previewable.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public FileDownloadResponse previewFile(Long id, Long ownerId) {
+        log.debug("Previewing file: id={}, ownerId={}", id, ownerId);
+
+        FileMetadata fileMetadata = findActiveOwnedFile(id, ownerId);
+
+        if (!isPreviewable(fileMetadata.getContentType())) {
+            log.warn("Preview not supported for content type '{}' on file id={}",
+                    fileMetadata.getContentType(), id);
+            throw new BadRequestException(
+                    "Preview is not supported for this file type: " + fileMetadata.getContentType());
+        }
+
+        InputStream content = minioService.getObject(fileMetadata.getObjectName());
+
+        log.info("File preview stream opened: id={}, fileId={}, objectName={}",
+                id, fileMetadata.getFileId(), fileMetadata.getObjectName());
+
+        return FileDownloadResponse.builder()
+                .originalFileName(fileMetadata.getOriginalFileName())
+                .contentType(fileMetadata.getContentType())
+                .fileSize(fileMetadata.getFileSize())
+                .inputStream(content)
+                .build();
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Favorites
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Retrieves all active file metadata records marked as favorite by an owner.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<FileMetadataResponse> getFavoriteFiles(Long ownerId) {
+        log.debug("Fetching favorite files for ownerId={}", ownerId);
+
+        return fileMetadataRepository.findFavoritesByOwnerId(ownerId)
+                .stream()
+                .map(fileMapper::toMetadataResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Marks (or unmarks) a file as favorite. When {@code favorite} is
+     * {@code null}, the current value is toggled.
+     */
+    @Override
+    public FileResponse setFavorite(Long id, Boolean favorite, Long ownerId) {
+        log.debug("Setting favorite: id={}, favorite={}, ownerId={}", id, favorite, ownerId);
+
+        FileMetadata fileMetadata = findActiveOwnedFile(id, ownerId);
+        boolean target = favorite != null ? favorite : !fileMetadata.getIsFavorite();
+
+        fileMetadata.setIsFavorite(target);
+        FileMetadata saved = fileMetadataRepository.save(fileMetadata);
+
+        log.info("Favorite updated: id={}, fileId={}, isFavorite={}",
+                saved.getId(), saved.getFileId(), saved.getIsFavorite());
+
+        return fileMapper.toFileResponse(saved);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Search
+    // ─────────────────────────────────────────────────────────────────────────
+
     /**
      * Searches for active file records by original file name (case-insensitive).
      */
@@ -224,7 +422,6 @@ public class FileServiceImpl implements FileService {
             return getUserFiles(ownerId);
         }
 
-        // Remove the filter on status since the repository query already filters for ACTIVE
         List<FileMetadata> results = fileMetadataRepository.searchByFileName(query.trim(), ownerId);
 
         log.debug("Search found {} files for query='{}'", results.size(), query);
@@ -234,22 +431,138 @@ public class FileServiceImpl implements FileService {
                 .collect(Collectors.toList());
     }
 
-    // ─────────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
     // Private helpers
-    // ─────────────────────────────────────────────────────────────────────────────
+    // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Generates a unique stored file name by prefixing a UUID to the original file name.
-     *
-     * @param originalFileName the original file name
-     * @return a unique stored file name
+     * Rejects requests that carry no user identity (401).
      */
-    private String generateStoredFileName(String originalFileName) {
-        return UUID.randomUUID() + "_" + originalFileName;
+    private void validateOwner(Long ownerId) {
+        if (ownerId == null) {
+            throw new UnauthorizedException("Missing user identity — unable to determine file owner");
+        }
     }
 
     /**
-     * Internal helper to find a file metadata record by ID or throw {@link ResourceNotFoundException}.
+     * Rejects empty and oversized files.
+     */
+    private void validateFileForUpload(MultipartFile file) {
+        if (file == null || file.isEmpty()) {
+            throw new BadRequestException("Cannot upload an empty file");
+        }
+
+        if (file.getSize() > minioProperties.getMaxFileSize()) {
+            throw new FileTooLargeException(
+                    "File size exceeds the maximum allowed size of "
+                            + minioProperties.getMaxFileSize() + " bytes");
+        }
+    }
+
+    /**
+     * Validates that the referenced folder exists and belongs to the owner.
+     * <p>
+     * The Folder Service enforces ownership itself (returns 404 when the folder
+     * is missing, deleted, or owned by someone else).
+     *
+     * @param folderId the folder UUID, or {@code null} to skip validation
+     * @param ownerId  the authenticated user's ID
+     */
+    private void validateFolder(String folderId, Long ownerId) {
+        if (folderId == null || folderId.isBlank()) {
+            return; // root-level placement — nothing to validate
+        }
+
+        try {
+            StandardResponse<FolderResponse> response =
+                    folderServiceClient.getFolderById(folderId, ownerId);
+
+            if (response == null || response.getData() == null) {
+                log.warn("Folder validation failed: no data for folderId={}", folderId);
+                throw new ResourceNotFoundException("Folder not found with id: " + folderId);
+            }
+            log.debug("Folder validated: id={}, name='{}'", folderId, response.getData().getName());
+        } catch (FeignException.NotFound e) {
+            log.warn("Folder not found: folderId={}, ownerId={}", folderId, ownerId);
+            throw new ResourceNotFoundException("Folder not found with id: " + folderId);
+        } catch (FeignException e) {
+            log.error("Folder Service error while validating folderId={}: {}",
+                    folderId, e.getMessage());
+            throw new FileStorageException("Unable to validate the target folder with the Folder Service");
+        } catch (RuntimeException e) {
+            if (e instanceof ResourceNotFoundException || e instanceof FileStorageException) {
+                throw e;
+            }
+            log.error("Unexpected error while validating folderId={}: {}", folderId, e.getMessage());
+            throw new FileStorageException("Unable to validate the target folder with the Folder Service");
+        }
+    }
+
+    /**
+     * Resolves the content type, falling back to a default when absent.
+     */
+    private String resolveContentType(String contentType) {
+        return (contentType == null || contentType.isBlank())
+                ? DEFAULT_CONTENT_TYPE
+                : contentType;
+    }
+
+    /**
+     * Returns whether the given MIME type supports in-browser preview.
+     */
+    private boolean isPreviewable(String contentType) {
+        if (contentType == null) {
+            return false;
+        }
+        return PREVIEWABLE_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT));
+    }
+
+    /**
+     * Enforces ownership only when an owner context is supplied.
+     *
+     * @param fileMetadata the file metadata record
+     * @param ownerId      the authenticated user's ID, or {@code null} for internal access
+     * @throws ForbiddenException if an owner context is present and does not match
+     */
+    private void assertOwner(FileMetadata fileMetadata, Long ownerId) {
+        if (ownerId != null && !fileMetadata.getOwnerId().equals(ownerId)) {
+            log.warn("User {} attempted to access file {} owned by {}",
+                    ownerId, fileMetadata.getId(), fileMetadata.getOwnerId());
+            throw new ForbiddenException("You do not have access to this file");
+        }
+    }
+
+    /**
+     * Finds a file metadata record by ID, enforcing ownership.
+     *
+     * @param id      the internal primary key
+     * @param ownerId the authenticated user's ID
+     * @return the owned FileMetadata entity
+     * @throws ResourceNotFoundException if no record exists with the given ID
+     * @throws ForbiddenException         if the record belongs to another user
+     */
+    private FileMetadata findOwnedFile(Long id, Long ownerId) {
+        FileMetadata fileMetadata = findFileById(id);
+        assertOwner(fileMetadata, ownerId);
+        return fileMetadata;
+    }
+
+    /**
+     * Finds an active (non-soft-deleted) file metadata record by ID,
+     * enforcing ownership.
+     */
+    private FileMetadata findActiveOwnedFile(Long id, Long ownerId) {
+        FileMetadata fileMetadata = findOwnedFile(id, ownerId);
+
+        if (fileMetadata.getStatus() == FileStatus.DELETED) {
+            throw new BadRequestException("This file has been deleted");
+        }
+        return fileMetadata;
+    }
+
+    /**
+     * Internal helper to find a file metadata record by ID or throw
+     * {@link ResourceNotFoundException}.
      *
      * @param id the internal primary key
      * @return the found FileMetadata entity

@@ -27,12 +27,57 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Long
     List<FileMetadata> findByOwnerId(Long ownerId);
 
     /**
+     * Finds all active file metadata records marked as favorite by an owner.
+     *
+     * @param ownerId the ID of the file owner
+     * @return a list of favorite file metadata records owned by the specified user
+     */
+    @Query("SELECT f FROM FileMetadata f WHERE f.ownerId = :ownerId " +
+           "AND f.isFavorite = true AND f.status = 'ACTIVE'")
+    List<FileMetadata> findFavoritesByOwnerId(@Param("ownerId") Long ownerId);
+
+    /**
      * Finds a file metadata record by its public-facing file ID (UUID).
      *
      * @param fileId the unique file identifier
      * @return an {@link Optional} containing the matching record, or empty if not found
      */
     Optional<FileMetadata> findByFileId(String fileId);
+
+    /**
+     * Finds a file metadata record by its internal ID, restricted to a specific owner.
+     * Used for ownership-checked access to file content.
+     *
+     * @param id      the internal primary key
+     * @param ownerId the ID of the file owner
+     * @return an {@link Optional} containing the matching record, or empty if not found
+     */
+    Optional<FileMetadata> findByIdAndOwnerId(Long id, Long ownerId);
+
+    /**
+     * Checks whether a MinIO object name is already in use.
+     *
+     * @param objectName the MinIO object key
+     * @return {@code true} if a record with the given object name exists
+     */
+    boolean existsByObjectName(String objectName);
+
+    /**
+     * Finds a file metadata record by its MinIO object name.
+     *
+     * @param objectName the MinIO object key
+     * @return an {@link Optional} containing the matching record, or empty if not found
+     */
+    Optional<FileMetadata> findByObjectName(String objectName);
+
+    /**
+     * Finds all file metadata records matching a SHA-256 checksum.
+     * Enables future duplicate-content detection.
+     *
+     * @param checksum the SHA-256 checksum
+     * @return a list of file metadata records with the given checksum
+     */
+    List<FileMetadata> findByChecksum(String checksum);
 
     /**
      * Finds all file metadata records within a specific folder.

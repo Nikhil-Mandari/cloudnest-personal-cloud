@@ -24,7 +24,7 @@ RUN --mount=type=cache,target=/root/.m2 mvn -B -q -DskipTests package
 FROM eclipse-temurin:25-jre
 
 LABEL org.opencontainers.image.title="CloudNest File Service" \
-      org.opencontainers.image.description="File metadata management — CRUD, search, soft-delete, restore, Supabase storage" \
+      org.opencontainers.image.description="File management — MinIO object storage + MySQL metadata, upload/download/preview, CRUD, search, move" \
       org.opencontainers.image.version="0.0.1-SNAPSHOT" \
       org.opencontainers.image.authors="CloudNest"
 

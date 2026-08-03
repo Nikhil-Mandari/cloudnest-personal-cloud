@@ -11,13 +11,22 @@ spring:
     password: ${FILE_DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
-# ── Supabase Storage Configuration ──────────────────────────
-supabase:
-  url: ${SUPABASE_URL:https://your-project.supabase.co}
-  anon-key: ${SUPABASE_ANON_KEY:your-anon-key}
-  service-role-key: ${SUPABASE_SERVICE_ROLE_KEY:your-service-role-key}
-  storage:
-    bucket: ${SUPABASE_STORAGE_BUCKET:cloudnest-files}
+# ── MinIO Object Storage Configuration ──────────────────────
+# Binary file content lives in MinIO; metadata lives in MySQL.
+# Credentials are supplied via environment variables (see docker-compose.yml).
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket-name: ${MINIO_BUCKET_NAME:cloudnest-files}
+  secure: ${MINIO_SECURE:false}
+  max-file-size: ${MINIO_MAX_FILE_SIZE:104857600}  # 100 MB
+
+spring:
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
 
 eureka:
   instance:
