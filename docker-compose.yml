@@ -1,0 +1,354 @@
+# ═══════════════════════════════════════════════════════════════
+# CloudNest Personal Cloud — Docker Compose (Backend Stack)
+# ═══════════════════════════════════════════════════════════════
+# Infrastructure:  MySQL 8.4 (LTS) with persistent volume
+# Platform:        Eureka Server (service discovery)
+#                  Config Server (centralized configuration)
+# Business:        auth / user / file / folder / share / notification
+# Entry point:     API Gateway
+#
+# All services communicate over the `cloudnest-net` bridge network using
+# Docker service names (e.g. `config-server`, `eureka-server`, `mysql`).
+# Local development still works unchanged because every service keeps
+# localhost defaults in its application.yml / config-repo, overridden here
+# via environment variables.
+#
+# Optional overrides via a `.env` file next to this compose file:
+#   MYSQL_ROOT_PASSWORD, JWT_SECRET, MINIO_ROOT_USER, MINIO_ROOT_PASSWORD,
+#   MINIO_BUCKET_NAME
+# ═══════════════════════════════════════════════════════════════
+name: cloudnest
+
+# ── Shared network & volumes ───────────────────────────────────
+networks:
+  cloudnest-net:
+    name: cloudnest-net
+    driver: bridge
+
+volumes:
+  mysql-data:
+    name: cloudnest-mysql-data
+  minio-data:
+    name: cloudnest-minio-data
+
+# ── Services ───────────────────────────────────────────────────
+services:
+
+  # ── 1. Database ─────────────────────────────────────────────
+  mysql:
+    image: mysql:8.4
+    container_name: cloudnest-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      TZ: UTC
+    # Host port 3307: avoids clashing with a local MySQL80 service on 3306.
+    # Inter-container traffic still uses mysql:3306 on the docker network.
+    ports:
+      - "3307:3306"
+    volumes:
+      - mysql-data:/var/lib/mysql
+    networks:
+      - cloudnest-net
+    healthcheck:
+      test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$${MYSQL_ROOT_PASSWORD} --silent"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+  # ── 2. Service Discovery ────────────────────────────────────
+  eureka-server:
+    build:
+      context: ./backend/eureka-server
+      dockerfile: Dockerfile
+    image: cloudnest/eureka-server:latest
+    container_name: cloudnest-eureka-server
+    restart: unless-stopped
+    ports:
+      - "8761:8761"
+    networks:
+      - cloudnest-net
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8761/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  # ── 3. Central Configuration ────────────────────────────────
+  config-server:
+    build:
+      context: ./backend/config-server
+      dockerfile: Dockerfile
+    image: cloudnest/config-server:latest
+    container_name: cloudnest-config-server
+    restart: unless-stopped
+    environment:
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      CONFIG_REPO_LOCATION: /app/config-repo
+    volumes:
+      - ./backend/config-repo:/app/config-repo:ro
+    ports:
+      - "8888:8888"
+    networks:
+      - cloudnest-net
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8888/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 45s
+
+  # ── 4. Auth Service (JWT generation) ────────────────────────
+  auth-service:
+    build:
+      context: ./backend/auth-service
+      dockerfile: Dockerfile
+    image: cloudnest/auth-service:latest
+    container_name: cloudnest-auth-service
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      AUTH_DB_URL: "jdbc:mysql://mysql:3306/auth_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      AUTH_DB_USERNAME: root
+      AUTH_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      JWT_SECRET: ${JWT_SECRET:-YnVnZmF0YWxzbm93bGVvcGFyZHN0cmV0Y2hpbmdvbmV0d29zbm93ZmFsbGluZ3RocmVlc2ZhbGxpbmc=}
+    ports:
+      - "8081:8081"
+    networks:
+      - cloudnest-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8081/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── 5. MinIO Object Storage ────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    container_name: cloudnest-minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:-minioadmin}
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
+    volumes:
+      - minio-data:/data
+    networks:
+      - cloudnest-net
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:9000/minio/health/live"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+
+  # ── 6. User Service ─────────────────────────────────────────
+  user-service:
+    build:
+      context: ./backend/user-service
+      dockerfile: Dockerfile
+    image: cloudnest/user-service:latest
+    container_name: cloudnest-user-service
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      USER_DB_URL: "jdbc:mysql://mysql:3306/user_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      USER_DB_USERNAME: root
+      USER_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "8082:8082"
+    networks:
+      - cloudnest-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8082/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── 7. File Service (MinIO Storage) ─────────────────────────
+  file-service:
+    build:
+      context: ./backend/file-service
+      dockerfile: Dockerfile
+    image: cloudnest/file-service:latest
+    container_name: cloudnest-file-service
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      FILE_DB_URL: "jdbc:mysql://mysql:3306/file_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      FILE_DB_USERNAME: root
+      FILE_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ACCESS_KEY: ${MINIO_ROOT_USER:-minioadmin}
+      MINIO_SECRET_KEY: ${MINIO_ROOT_PASSWORD:-minioadmin}
+      MINIO_BUCKET_NAME: ${MINIO_BUCKET_NAME:-cloudnest-files}
+    ports:
+      - "8083:8083"
+    networks:
+      - cloudnest-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8083/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── 8. Folder Service ───────────────────────────────────────
+  folder-service:
+    build:
+      context: ./backend/folder-service
+      dockerfile: Dockerfile
+    image: cloudnest/folder-service:latest
+    container_name: cloudnest-folder-service
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      FOLDER_DB_URL: "jdbc:mysql://mysql:3306/folder_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      FOLDER_DB_USERNAME: root
+      FOLDER_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "8084:8084"
+    networks:
+      - cloudnest-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8084/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── 9. Notification Service ─────────────────────────────────
+  notification-service:
+    build:
+      context: ./backend/notification-service
+      dockerfile: Dockerfile
+    image: cloudnest/notification-service:latest
+    container_name: cloudnest-notification-service
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      NOTIFICATION_DB_URL: "jdbc:mysql://mysql:3306/notification_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      NOTIFICATION_DB_USERNAME: root
+      NOTIFICATION_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "8085:8085"
+    networks:
+      - cloudnest-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8085/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── 10. Share Service (Feign client) ────────────────────────
+  share-service:
+    build:
+      context: ./backend/share-service
+      dockerfile: Dockerfile
+    image: cloudnest/share-service:latest
+    container_name: cloudnest-share-service
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      SHARE_DB_URL: "jdbc:mysql://mysql:3306/share_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      SHARE_DB_USERNAME: root
+      SHARE_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+    ports:
+      - "8086:8086"
+    networks:
+      - cloudnest-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8086/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
+  # ── 11. API Gateway (single entry point) ────────────────────
+  api-gateway:
+    build:
+      context: ./backend/api-gateway
+      dockerfile: Dockerfile
+    image: cloudnest/api-gateway:latest
+    container_name: cloudnest-api-gateway
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      JWT_SECRET: ${JWT_SECRET:-YnVnZmF0YWxzbm93bGVvcGFyZHN0cmV0Y2hpbmdvbmV0d29zbm93ZmFsbGluZ3RocmVlc2ZhbGxpbmc=}
+    ports:
+      - "8080:8080"
+    networks:
+      - cloudnest-net
+    depends_on:
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8080/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s

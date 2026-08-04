@@ -1,0 +1,100 @@
+import { useForm } from 'react-hook-form';
+import { Link, useLocation } from 'react-router-dom';
+import { Mail } from 'lucide-react';
+import { toast } from 'react-toastify';
+
+import { Button } from '@/components/ui/Button';
+import { Input } from '@/components/ui/Input';
+import { PasswordInput } from '@/components/ui/PasswordInput';
+import { APP_ROUTES } from '@/constants/routes';
+import { EMAIL_PATTERN } from '@/constants/validation';
+import { useAuthMutations } from '@/hooks/useAuthMutations';
+import type { LoginFormValues } from '@/types';
+
+export function LoginPage() {
+  const location = useLocation();
+  const { loginMutation } = useAuthMutations();
+
+  const {
+    register,
+    handleSubmit,
+    formState: { errors },
+  } = useForm<LoginFormValues>({
+    defaultValues: { email: '', password: '', rememberMe: false },
+  });
+
+  // Redirect back to the page the user originally tried to visit.
+  const from = (location.state as { from?: string } | null)?.from;
+
+  const onSubmit = (values: LoginFormValues) => {
+    loginMutation.mutate({ ...values, from });
+  };
+
+  return (
+    <div>
+      <div className="mb-8">
+        <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
+          Welcome back
+        </h1>
+        <p className="mt-1.5 text-sm text-gray-500 dark:text-gray-400">
+          Sign in to continue to your cloud.
+        </p>
+      </div>
+
+      <form onSubmit={handleSubmit(onSubmit)} noValidate className="space-y-5">
+        <Input
+          label="Email"
+          type="email"
+          placeholder="you@example.com"
+          autoComplete="email"
+          leftIcon={<Mail className="h-4 w-4" />}
+          error={errors.email?.message}
+          {...register('email', {
+            required: 'Email is required',
+            pattern: { value: EMAIL_PATTERN, message: 'Enter a valid email address' },
+          })}
+        />
+
+        <PasswordInput
+          label="Password"
+          placeholder="Enter your password"
+          autoComplete="current-password"
+          error={errors.password?.message}
+          {...register('password', { required: 'Password is required' })}
+        />
+
+        <div className="flex items-center justify-between">
+          <label className="flex cursor-pointer items-center gap-2 text-sm text-gray-600 dark:text-gray-300">
+            <input
+              type="checkbox"
+              className="text-brand-600 focus:ring-brand-500 h-4 w-4 rounded border-gray-300 dark:border-gray-600 dark:bg-gray-900"
+              {...register('rememberMe')}
+            />
+            Remember me
+          </label>
+          <button
+            type="button"
+            onClick={() => toast.info('Password reset is not wired up yet.')}
+            className="text-brand-600 hover:text-brand-700 dark:text-brand-400 text-sm font-medium transition-colors hover:underline"
+          >
+            Forgot password?
+          </button>
+        </div>
+
+        <Button type="submit" size="lg" fullWidth isLoading={loginMutation.isPending}>
+          Sign in
+        </Button>
+      </form>
+
+      <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
+        Don&apos;t have an account?{' '}
+        <Link
+          to={APP_ROUTES.register}
+          className="text-brand-600 hover:text-brand-700 dark:text-brand-400 font-medium transition-colors hover:underline"
+        >
+          Create one
+        </Link>
+      </p>
+    </div>
+  );
+}

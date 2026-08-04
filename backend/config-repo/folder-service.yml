@@ -1,0 +1,28 @@
+server:
+  port: 8084
+
+spring:
+  application:
+    name: folder-service
+
+  datasource:
+    url: ${FOLDER_DB_URL:jdbc:mysql://localhost:3306/folder_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC}
+    username: ${FOLDER_DB_USERNAME:root}
+    password: ${FOLDER_DB_PASSWORD:root}
+    driver-class-name: com.mysql.cj.jdbc.Driver
+
+eureka:
+  instance:
+    # Register with the container IP (required for Docker: hostname is an unresolvable container ID)
+    prefer-ip-address: true
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
