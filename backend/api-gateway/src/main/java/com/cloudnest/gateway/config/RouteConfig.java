@@ -53,6 +53,7 @@ public class RouteConfig {
                 .route("folder-service", r -> apiRoute(r, "/api/folders/**",      folderService))
                 .route("share-service",  r -> apiRoute(r, "/api/shares/**",       shareService))
                 .route("notification-service", r -> apiRoute(r, "/api/notifications/**", notificationService))
+                .route("file-service-docs", r -> docsRoute(r, fileService))
                 .build();
     }
 
@@ -72,6 +73,23 @@ public class RouteConfig {
     private Buildable<Route> apiRoute(PredicateSpec spec, String pathPattern, String serviceName) {
         return spec
                 .path(pathPattern)
+                .uri("lb://" + serviceName);
+    }
+
+    /**
+     * Builds routes that expose the File Service's Swagger UI / OpenAPI docs
+     * through the gateway (public — no JWT required).
+     *
+     * @param spec        the predicate spec (route builder entry point)
+     * @param serviceName the Eureka service ID, e.g. {@code file-service}
+     * @return a {@code Buildable<Route>} to be consumed by the fluent builder
+     */
+    private Buildable<Route> docsRoute(PredicateSpec spec, String serviceName) {
+        return spec
+                .path("/v3/api-docs/**")
+                .or().path("/swagger-ui/**")
+                .or().path("/swagger-ui.html")
+                .or().path("/webjars/**")
                 .uri("lb://" + serviceName);
     }
 }
