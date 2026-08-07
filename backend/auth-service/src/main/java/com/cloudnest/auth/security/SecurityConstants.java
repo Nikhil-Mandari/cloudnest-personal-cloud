@@ -23,6 +23,8 @@ public final class SecurityConstants {
             "/api/auth/register/verify",
             "/api/auth/login",
             "/api/auth/login/verify",
+            "/api/auth/login/2fa",
+            "/api/auth/passkeys/authenticate/**",
             "/api/auth/refresh",
             "/api/auth/forgot-password",
             "/api/auth/forgot-password/**",

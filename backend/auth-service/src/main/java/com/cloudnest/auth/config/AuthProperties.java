@@ -28,6 +28,12 @@ public class AuthProperties {
     /** Security behaviour toggles. */
     private Security security = new Security();
 
+    /** TOTP two-factor-authentication settings. */
+    private TwoFactor twoFactor = new TwoFactor();
+
+    /** WebAuthn (passkey) relying-party settings. */
+    private Webauthn webauthn = new Webauthn();
+
     /** First-run administrator bootstrap. */
     private Admin admin = new Admin();
 
@@ -93,6 +99,42 @@ public class AuthProperties {
          * When {@code true}, logins from a trusted device skip the OTP step.
          */
         private boolean skipOtpOnTrustedDevice = true;
+    }
+
+    /**
+     * TOTP two-factor-authentication configuration.
+     */
+    @Getter
+    @Setter
+    public static class TwoFactor {
+        /** Number of digits in the TOTP code. */
+        private int codeDigits = 6;
+
+        /** TOTP time-step in seconds. */
+        private int timeStepSeconds = 30;
+
+        /** Accepted clock-drift window (steps either side of now). */
+        private int window = 1;
+
+        /** Number of single-use backup codes generated at enable. */
+        private int backupCodeCount = 10;
+    }
+
+    /**
+     * WebAuthn relying-party configuration for passkeys.
+     */
+    @Getter
+    @Setter
+    public static class Webauthn {
+        /** Relying-party id (e.g. {@code localhost} in dev). */
+        private String rpId = "localhost";
+
+        /** Display name shown in the platform authenticator prompt. */
+        private String rpName = "CloudNest";
+
+        /** Allowed origins (must match the frontend origin exactly). */
+        private java.util.List<String> origins = new java.util.ArrayList<>(
+                java.util.List.of("http://localhost:5173"));
     }
 
     /**

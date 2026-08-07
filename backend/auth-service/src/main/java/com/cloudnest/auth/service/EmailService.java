@@ -123,6 +123,36 @@ public class EmailService {
     }
 
     /**
+     * Confirmation email when TOTP two-factor authentication is enabled.
+     */
+    public void sendTwoFactorEnabled(String to, String name) {
+        String subject = "Two-factor authentication is ON — " + properties.getAppName();
+        String body = """
+                <p>Hi %s,</p>
+                <p>Two-factor authentication is now enabled on your account. Sign-ins will
+                require a one-time code from your authenticator app.</p>
+                <p>If you didn't enable this, disable it from Security settings and change
+                your password immediately.</p>
+                """.formatted(escape(name));
+        dispatch(to, subject, body);
+    }
+
+    /**
+     * Confirmation email when TOTP two-factor authentication is disabled.
+     */
+    public void sendTwoFactorDisabled(String to, String name) {
+        String subject = "Two-factor authentication is OFF — " + properties.getAppName();
+        String body = """
+                <p>Hi %s,</p>
+                <p>Two-factor authentication was disabled on your account. Your account now
+                relies on your password alone.</p>
+                <p>If you didn't disable this, change your password immediately and review
+                your active sessions.</p>
+                """.formatted(escape(name));
+        dispatch(to, subject, body);
+    }
+
+    /**
      * Account-locked alert after too many failed attempts.
      */
     public void sendAccountLockedAlert(String to, String name, int minutes) {

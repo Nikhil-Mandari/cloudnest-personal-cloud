@@ -156,6 +156,31 @@ public class Notification {
          * The account was temporarily locked after repeated failed
          * sign-in attempts.
          */
-        ACCOUNT_LOCKED
+        ACCOUNT_LOCKED,
+
+        /**
+         * TOTP two-factor authentication was enabled on the account.
+         */
+        TWO_FACTOR_ENABLED,
+
+        /**
+         * TOTP two-factor authentication was disabled on the account.
+         */
+        TWO_FACTOR_DISABLED,
+
+        /**
+         * The user regenerated their 2FA backup codes (old ones invalidated).
+         */
+        BACKUP_CODES_REGENERATED,
+
+        /**
+         * A new WebAuthn passkey was registered to the account.
+         */
+        PASSKEY_REGISTERED,
+
+        /**
+         * A WebAuthn passkey was removed from the account.
+         */
+        PASSKEY_REMOVED
     }
 }

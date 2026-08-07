@@ -45,6 +45,15 @@ auth:
     challenge-expiration-minutes: ${AUTH_CHALLENGE_EXPIRATION_MINUTES:10}
   security:
     skip-otp-on-trusted-device: ${AUTH_SKIP_OTP_ON_TRUSTED_DEVICE:true}
+  two-factor:
+    code-digits: ${AUTH_2FA_CODE_DIGITS:6}
+    time-step-seconds: ${AUTH_2FA_TIME_STEP_SECONDS:30}
+    window: ${AUTH_2FA_WINDOW:1}
+    backup-code-count: ${AUTH_2FA_BACKUP_CODE_COUNT:10}
+  webauthn:
+    rp-id: ${AUTH_WEBAUTHN_RP_ID:localhost}
+    rp-name: ${AUTH_WEBAUTHN_RP_NAME:CloudNest}
+    origins: ${AUTH_WEBAUTHN_ORIGINS:http://localhost:5173}
   # First-run administrator bootstrap: creates (or promotes) an account with
   # this email to ROLE_ADMIN on startup. Set ADMIN_EMAIL to blank to disable.
   admin:

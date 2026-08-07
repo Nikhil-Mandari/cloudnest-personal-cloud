@@ -22,6 +22,7 @@ import com.cloudnest.auth.dto.SecurityLogResponse;
 import com.cloudnest.auth.dto.SecurityOverviewResponse;
 import com.cloudnest.auth.dto.SessionResponse;
 import com.cloudnest.auth.dto.TrustedDeviceResponse;
+import com.cloudnest.auth.dto.TwoFactorLoginRequest;
 import com.cloudnest.auth.dto.VerifyOtpRequest;
 import com.cloudnest.auth.entity.OtpVerification;
 import com.cloudnest.auth.entity.UserCredential;
@@ -48,6 +49,7 @@ import com.cloudnest.auth.service.RefreshTokenService;
 import com.cloudnest.auth.service.SecurityEventService;
 import com.cloudnest.auth.service.SessionService;
 import com.cloudnest.auth.service.TrustedDeviceService;
+import com.cloudnest.auth.service.TwoFactorService;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.data.domain.Page;
@@ -97,6 +99,7 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
     private final TrustedDeviceService trustedDeviceService;
     private final AccountLockService lockService;
     private final SecurityEventService securityEvents;
+    private final TwoFactorService twoFactorService;
     private final UserServiceClient userServiceClient;
 
     public AuthServiceImpl(UserCredentialRepository userRepository,
@@ -114,6 +117,7 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
                            TrustedDeviceService trustedDeviceService,
                            AccountLockService lockService,
                            SecurityEventService securityEvents,
+                           TwoFactorService twoFactorService,
                            UserServiceClient userServiceClient) {
         this.userRepository = userRepository;
         this.loginHistoryRepository = loginHistoryRepository;
@@ -130,6 +134,7 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
         this.trustedDeviceService = trustedDeviceService;
         this.lockService = lockService;
         this.securityEvents = securityEvents;
+        this.twoFactorService = twoFactorService;
         this.userServiceClient = userServiceClient;
     }
 
@@ -263,6 +268,21 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
 
         boolean trusted = trustedDeviceService.isTrusted(user.getId(), deviceId);
 
+        // 2FA takes precedence over the OTP / trusted-device shortcut: even a
+        // trusted device must prove the second factor on a password sign-in.
+        if (twoFactorService.isEnabled(user.getId())) {
+            String challengeToken = jwtProvider.generateChallengeToken(user.getId(), "2FA_LOGIN");
+            return LoginResponse.builder()
+                    .requires2fa(true)
+                    .challengeToken(challengeToken)
+                    .userId(user.getId())
+                    .username(user.getUsername())
+                    .email(user.getEmail())
+                    .role(user.getRole())
+                    .trustedDevice(trusted)
+                    .build();
+        }
+
         // Trusted device + skip enabled → straight to a token pair.
         if (properties.getSecurity().isSkipOtpOnTrustedDevice() && trusted) {
             AuthResponse auth = completeLogin(user, clientInfo, deviceId, true);
@@ -297,6 +317,50 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
         securityEvents.log(user, SecurityEventService.ACTION_OTP_VERIFIED, clientInfo, "Login OTP verified");
 
         return completeLogin(user, clientInfo, deviceId, rememberDevice);
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse verifyTwoFactorLogin(TwoFactorLoginRequest request, ClientInfo clientInfo,
+                                             String deviceId, boolean rememberDevice) {
+        Claims claims = requireChallengeClaims(request.getChallengeToken(), "2FA_LOGIN");
+        Long userId = claims.get("userId", Long.class);
+        UserCredential user = userRepository.findById(userId)
+                .orElseThrow(() -> new OtpException("User not found"));
+
+        if (!twoFactorService.verifyForLogin(userId, request.getCode())) {
+            securityEvents.recordLogin(user, false, clientInfo, "Invalid two-factor code");
+            log.warn("2FA verification failed for userId={}", userId);
+            throw new BadCredentialsException("Invalid two-factor code");
+        }
+
+        securityEvents.log(user, SecurityEventService.ACTION_2FA_VERIFIED, clientInfo,
+                "Two-factor code verified at sign-in");
+        log.info("2FA verified for userId={}", userId);
+        return completeLogin(user, clientInfo, deviceId, rememberDevice);
+    }
+
+    @Override
+    @Transactional
+    public AuthResponse completePasskeyLogin(Long userId, ClientInfo clientInfo, String deviceId) {
+        UserCredential user = userRepository.findById(userId)
+                .orElseThrow(() -> new BadCredentialsException("Account not found"));
+
+        if (UserCredential.AccountStatus.PENDING_VERIFICATION.equals(user.getStatus())) {
+            throw new EmailNotVerifiedException(
+                    "Please verify your email address before signing in. Use the activation code sent to you.");
+        }
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
+            throw new AccountDisabledException(
+                    "This account has been disabled. Contact an administrator.");
+        }
+        if (lockService.isLocked(user)) {
+            throw new AccountLockedException(lockService.remainingMinutes(user));
+        }
+
+        securityEvents.recordLogin(user, true, clientInfo, null);
+        log.info("Passkey sign-in succeeded for userId={}", userId);
+        return completeLogin(user, clientInfo, deviceId, false);
     }
 
     @Override
@@ -630,7 +694,7 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
                 .securityScore(score)
                 .accountStatus(user.getStatus() == null ? "ACTIVE" : user.getStatus().name())
                 .emailVerified(user.getEmailVerifiedAt() != null)
-                .twoFactorEnabled(false)
+                .twoFactorEnabled(twoFactorService.isEnabled(userId))
                 .passwordChangedAt(user.getPasswordChangedAt())
                 .lastLoginAt(user.getLastLoginAt())
                 .activeSessionCount(sessionService.listActive(userId).size())
@@ -942,6 +1006,11 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
         // Fewer trusted devices = smaller attack surface.
         long trustedCount = trustedDeviceService.list(user.getId()).size();
         score += trustedCount <= 3 ? 10 : 5;
+
+        // 2FA enabled is the strongest single signal.
+        if (twoFactorService.isEnabled(user.getId())) {
+            score += 20;
+        }
 
         // Recent brute-force attempts lower the score.
         score -= Math.min(20, failedLoginsLast7Days * 4);

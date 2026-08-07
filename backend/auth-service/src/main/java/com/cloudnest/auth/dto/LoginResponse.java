@@ -26,7 +26,11 @@ public class LoginResponse {
     @Builder.Default
     private boolean requiresOtp = false;
 
-    /** Short-lived JWT carrying the pending sign-in (OTP step). */
+    /** {@code true} when the caller must verify a TOTP/backup code next (2FA). */
+    @Builder.Default
+    private boolean requires2fa = false;
+
+    /** Short-lived JWT carrying the pending sign-in (OTP / 2FA step). */
     private String challengeToken;
 
     /** Access token — present only when {@code requiresOtp} is {@code false}. */

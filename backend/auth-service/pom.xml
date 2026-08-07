@@ -82,6 +82,13 @@
             <scope>runtime</scope>
         </dependency>
 
+        <!-- WebAuthn (passkeys / biometric sign-in) -->
+        <dependency>
+            <groupId>com.yubico</groupId>
+            <artifactId>webauthn-server-core</artifactId>
+            <version>2.5.2</version>
+        </dependency>
+
         <!-- JWT (jjwt) -->
         <dependency>
             <groupId>io.jsonwebtoken</groupId>

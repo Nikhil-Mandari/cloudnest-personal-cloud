@@ -20,6 +20,7 @@ import com.cloudnest.auth.dto.SecurityLogResponse;
 import com.cloudnest.auth.dto.SecurityOverviewResponse;
 import com.cloudnest.auth.dto.SessionResponse;
 import com.cloudnest.auth.dto.TrustedDeviceResponse;
+import com.cloudnest.auth.dto.TwoFactorLoginRequest;
 import com.cloudnest.auth.dto.VerifyOtpRequest;
 import com.cloudnest.auth.jwt.JwtProvider;
 import com.cloudnest.auth.security.ClientInfo;
@@ -185,6 +186,32 @@ public class AuthController {
         log.info("POST /api/auth/login/verify");
 
         AuthResponse response = authService.verifyLogin(
+                request, clientInfo(httpRequest), deviceId, rememberDevice);
+
+        return ResponseEntity.ok(StandardResponse.<AuthResponse>builder()
+                .success(true)
+                .message("Login successful")
+                .data(response)
+                .path(httpRequest.getRequestURI())
+                .build());
+    }
+
+    /**
+     * Completes a sign-in with the TOTP / backup code when 2FA is enabled.
+     */
+    @Operation(summary = "Verify two-factor login",
+            description = "Completes a sign-in after the user enters their authenticator code or a "
+                    + "backup code. Used when POST /api/auth/login returned requires2fa.")
+    @PostMapping("/login/2fa")
+    public ResponseEntity<StandardResponse<AuthResponse>> verifyTwoFactorLogin(
+            @Valid @RequestBody TwoFactorLoginRequest request,
+            @RequestHeader(value = DEVICE_ID_HEADER, required = false) String deviceId,
+            @RequestParam(defaultValue = "false") boolean rememberDevice,
+            HttpServletRequest httpRequest) {
+
+        log.info("POST /api/auth/login/2fa");
+
+        AuthResponse response = authService.verifyTwoFactorLogin(
                 request, clientInfo(httpRequest), deviceId, rememberDevice);
 
         return ResponseEntity.ok(StandardResponse.<AuthResponse>builder()

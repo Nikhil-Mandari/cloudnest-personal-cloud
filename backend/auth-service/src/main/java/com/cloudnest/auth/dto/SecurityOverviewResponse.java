@@ -25,8 +25,11 @@ public class SecurityOverviewResponse {
     private String accountStatus;
     private boolean emailVerified;
 
-    /** Always {@code false} until TOTP 2FA ships (Phase 3). */
+    /** Whether TOTP two-factor authentication is enabled. */
     private boolean twoFactorEnabled;
+
+    /** Number of registered WebAuthn passkeys. */
+    private int passkeyCount;
 
     private LocalDateTime passwordChangedAt;
     private LocalDateTime lastLoginAt;

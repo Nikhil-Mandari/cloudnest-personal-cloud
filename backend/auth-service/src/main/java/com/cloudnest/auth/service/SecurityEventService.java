@@ -42,6 +42,12 @@ public class SecurityEventService {
     public static final String ACTION_DEVICE_UNTRUSTED = "DEVICE_UNTRUSTED";
     public static final String ACTION_ACCOUNT_ACTIVATED = "ACCOUNT_ACTIVATED";
     public static final String ACTION_ACCOUNT_LOCKED = "ACCOUNT_LOCKED";
+    public static final String ACTION_2FA_ENABLED = "2FA_ENABLED";
+    public static final String ACTION_2FA_DISABLED = "2FA_DISABLED";
+    public static final String ACTION_2FA_VERIFIED = "2FA_VERIFIED";
+    public static final String ACTION_BACKUP_CODES_REGENERATED = "BACKUP_CODES_REGENERATED";
+    public static final String ACTION_PASSKEY_REGISTERED = "PASSKEY_REGISTERED";
+    public static final String ACTION_PASSKEY_REMOVED = "PASSKEY_REMOVED";
     public static final String ACTION_ACCOUNT_DISABLED = "ACCOUNT_DISABLED";
     public static final String ACTION_ACCOUNT_ENABLED = "ACCOUNT_ENABLED";
     public static final String ACTION_ROLE_CHANGED = "ROLE_CHANGED";

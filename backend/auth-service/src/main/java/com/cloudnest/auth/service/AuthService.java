@@ -17,6 +17,7 @@ import com.cloudnest.auth.dto.SecurityLogResponse;
 import com.cloudnest.auth.dto.SecurityOverviewResponse;
 import com.cloudnest.auth.dto.SessionResponse;
 import com.cloudnest.auth.dto.TrustedDeviceResponse;
+import com.cloudnest.auth.dto.TwoFactorLoginRequest;
 import com.cloudnest.auth.dto.VerifyOtpRequest;
 import com.cloudnest.auth.security.ClientInfo;
 import org.springframework.data.domain.Page;
@@ -61,6 +62,20 @@ public interface AuthService {
      */
     AuthResponse verifyLogin(VerifyOtpRequest request, ClientInfo clientInfo,
                              String deviceId, boolean rememberDevice);
+
+    /**
+     * Completes a sign-in blocked on the 2FA step: verifies the TOTP / backup
+     * code bound to the {@code 2FA_LOGIN} challenge token and issues the token
+     * pair.
+     */
+    AuthResponse verifyTwoFactorLogin(TwoFactorLoginRequest request, ClientInfo clientInfo,
+                                      String deviceId, boolean rememberDevice);
+
+    /**
+     * Completes a sign-in after a successful WebAuthn (passkey) assertion.
+     * A valid passkey satisfies both factors, so no OTP/2FA is required.
+     */
+    AuthResponse completePasskeyLogin(Long userId, ClientInfo clientInfo, String deviceId);
 
     /**
      * Resends an OTP (cooldown-bounded) for registration, login or password
