@@ -1,18 +1,20 @@
 import { useForm } from 'react-hook-form';
 import { Link, useLocation } from 'react-router-dom';
-import { KeyRound, Mail } from 'lucide-react';
+import { Fingerprint, KeyRound, Mail } from 'lucide-react';
 
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
 import { APP_ROUTES } from '@/constants/routes';
 import { EMAIL_PATTERN } from '@/constants/validation';
-import { useAuthMutations } from '@/hooks/useAuthMutations';
+import { isPasskeySupported, useAuthMutations } from '@/hooks/useAuthMutations';
 import type { LoginFormValues } from '@/types';
 
 export function LoginPage() {
   const location = useLocation();
-  const { loginMutation } = useAuthMutations();
+  const { loginMutation, passkeyLoginMutation } = useAuthMutations();
+
+  const passkeysSupported = isPasskeySupported();
 
   const {
     register,
@@ -88,6 +90,39 @@ export function LoginPage() {
           Sign in
         </Button>
       </form>
+
+      {passkeysSupported ? (
+        <>
+          <div className="relative my-6">
+            <div className="absolute inset-0 flex items-center">
+              <div className="w-full border-t border-gray-200 dark:border-gray-800" />
+            </div>
+            <div className="relative flex justify-center">
+              <span className="bg-white px-3 text-xs text-gray-400 dark:bg-gray-950">or</span>
+            </div>
+          </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            size="lg"
+            fullWidth
+            leftIcon={<Fingerprint className="h-4 w-4" />}
+            isLoading={passkeyLoginMutation.isPending}
+            onClick={() => passkeyLoginMutation.mutate(from ? { from } : {})}
+          >
+            Sign in with a passkey
+          </Button>
+          <p className="mt-2 text-center text-xs text-gray-400 dark:text-gray-500">
+            Use Face ID, Touch ID, Windows Hello or a security key.
+          </p>
+        </>
+      ) : (
+        <p className="mt-4 flex items-center justify-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+          <Fingerprint className="h-3.5 w-3.5" />
+          Passkeys are not supported by this browser.
+        </p>
+      )}
 
       <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
         Don&apos;t have an account?{' '}

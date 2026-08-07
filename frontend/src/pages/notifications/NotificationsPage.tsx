@@ -30,6 +30,12 @@ const SECURITY_TYPES: readonly NotificationType[] = [
   'PASSWORD_CHANGED',
   'PASSWORD_RESET',
   'ACCOUNT_LOCKED',
+  // ── Phase 6: 2FA & passkeys ────────────────────────────────────────────
+  'TWO_FACTOR_ENABLED',
+  'TWO_FACTOR_DISABLED',
+  'BACKUP_CODES_REGENERATED',
+  'PASSKEY_REGISTERED',
+  'PASSKEY_REMOVED',
 ];
 
 const FILTERS: ReadonlyArray<{ value: NotificationFilter; label: string }> = [

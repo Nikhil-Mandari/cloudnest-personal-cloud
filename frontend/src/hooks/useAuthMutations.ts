@@ -25,6 +25,10 @@ export interface VerifyOtpMutationVariables {
   otpExpiryMinutes?: number;
 }
 
+import { isPasskeySupported } from '@/utils/passkeys';
+
+export { isPasskeySupported };
+
 /**
  * Auth mutations for the login / register / OTP-verify pages.
  *
@@ -45,6 +49,20 @@ export function useAuthMutations() {
       return { response: data.data, rememberMe: rememberMe ?? false };
     },
     onSuccess: async ({ response, rememberMe }, variables) => {
+      if (response.requires2fa) {
+        toast.info('Password verified — enter your authenticator code.');
+        navigate(APP_ROUTES.verifyOtp, {
+          state: {
+            purpose: '2fa',
+            challengeToken: response.challengeToken,
+            email: response.email,
+            rememberDevice: rememberMe,
+            from: variables.from,
+          } satisfies VerifyOtpState,
+        });
+        return;
+      }
+
       if (response.requiresOtp) {
         toast.info('Password verified — check your email for the sign-in code.');
         navigate(APP_ROUTES.verifyOtp, {
@@ -97,6 +115,13 @@ export function useAuthMutations() {
   const verifyOtp = useMutation({
     mutationFn: async ({ purpose, code, email, challengeToken, rememberDevice }: VerifyOtpMutationVariables) => {
       const payload: VerifyOtpRequest = { email, challengeToken, code };
+      if (purpose === '2fa') {
+        const { data } = await authService.verifyTwoFactorLogin(
+          { challengeToken: challengeToken ?? '', code },
+          rememberDevice ?? false,
+        );
+        return data.data;
+      }
       if (purpose === 'registration') {
         const { data } = await authService.verifyRegistration(payload, rememberDevice ?? false);
         return data.data;
@@ -116,6 +141,43 @@ export function useAuthMutations() {
   const resendOtp = useMutation({
     mutationFn: ({ email, challengeToken }: Pick<VerifyOtpMutationVariables, 'email' | 'challengeToken'>) =>
       authService.resendOtp({ email, challengeToken }),
+  });
+
+  const passkeyLogin = useMutation({
+    mutationFn: async ({ from }: { from?: string } = {}) => {
+      void from; // redirect target is applied on success
+      const { data: startData } = await authService.passkeyAuthenticateStart();
+      const started = startData.data;
+
+      if (!isPasskeySupported()) {
+        throw new Error('Passkeys are not supported by this browser.');
+      }
+
+      const assertion = await navigator.credentials.get({
+        publicKey: JSON.parse(started.credentialsGetJson) as PublicKeyCredentialRequestOptions,
+      });
+      if (!assertion) {
+        throw new Error('Passkey sign-in was cancelled.');
+      }
+
+      const responseJson =
+        'toJSON' in assertion
+          ? JSON.stringify((assertion as { toJSON: () => unknown }).toJSON())
+          : JSON.stringify(assertion);
+
+      const { data } = await authService.passkeyAuthenticateFinish({
+        requestJson: started.requestJson,
+        responseJson,
+      });
+      return data.data;
+    },
+    onSuccess: (auth, variables) => {
+      toast.success('Passkey sign-in successful!');
+      applySession(auth.token, auth.refreshToken, variables.from);
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, 'Passkey sign-in failed. Please try again.'));
+    },
   });
 
   function applySession(token: string, refreshToken: string | undefined, from?: string) {
@@ -139,5 +201,11 @@ export function useAuthMutations() {
       });
   }
 
-  return { loginMutation: login, registerMutation: register, verifyOtpMutation: verifyOtp, resendOtpMutation: resendOtp };
+  return {
+    loginMutation: login,
+    registerMutation: register,
+    verifyOtpMutation: verifyOtp,
+    resendOtpMutation: resendOtp,
+    passkeyLoginMutation: passkeyLogin,
+  };
 }

@@ -10,6 +10,9 @@ export type AccountStatus = 'PENDING_VERIFICATION' | 'ACTIVE' | 'LOCKED';
 /** OTP purpose carried through the verification flow. */
 export type OtpPurpose = 'registration' | 'login' | 'password-reset';
 
+/** Purpose of a code-verification page visit (incl. the 2FA step). */
+export type VerifyOtpPurpose = 'registration' | 'login' | '2fa';
+
 /**
  * The signed-in user's profile as returned by the user-service
  * (`GET /api/users/me`). `displayName` may be missing for accounts created
@@ -86,10 +89,14 @@ export interface RegisterResponse {
 
 /**
  * Unified login response. When `requiresOtp` is true only `challengeToken`
- * (plus identity) is populated — complete via `verifyLogin`.
+ * (plus identity) is populated — complete via `verifyLogin`. When
+ * `requires2fa` is true complete via `verifyTwoFactorLogin` with an
+ * authenticator / backup code.
  */
 export interface LoginResponse {
   requiresOtp: boolean;
+  /** When true, the caller must complete the TOTP / backup-code step. */
+  requires2fa?: boolean;
   challengeToken?: string;
   token?: string;
   refreshToken?: string;
@@ -212,7 +219,7 @@ export interface RegisterFormValues {
 
 /** Navigation state carried to the OTP verification page. */
 export interface VerifyOtpState {
-  purpose: Exclude<OtpPurpose, 'password-reset'>;
+  purpose: VerifyOtpPurpose;
   email?: string;
   challengeToken?: string;
   rememberDevice?: boolean;
@@ -220,4 +227,79 @@ export interface VerifyOtpState {
   from?: string;
   resendAfterSeconds?: number;
   otpExpiryMinutes?: number;
+}
+
+// ── Phase 6: two-factor authentication (TOTP) ──────────────────────────────
+
+/** Current 2FA state shown on the Security page. */
+export interface TwoFactorStatus {
+  enabled: boolean;
+  backupCodesRemaining: number;
+}
+
+/** Secret + otpauth URI returned by the setup step (QR payload). */
+export interface TwoFactorSetup {
+  secret: string;
+  otpauthUri: string;
+  accountName: string;
+  issuer: string;
+  digits: number;
+  periodSeconds: number;
+}
+
+export interface EnableTwoFactorRequest {
+  code: string;
+}
+
+/** Enabling 2FA returns the backup codes exactly once. */
+export interface EnableTwoFactorResponse {
+  enabled: boolean;
+  backupCodes: string[];
+}
+
+export interface DisableTwoFactorRequest {
+  /** TOTP code, unused backup code or account password. */
+  verification: string;
+}
+
+export interface RegenerateBackupCodesResponse {
+  backupCodes: string[];
+}
+
+export interface TwoFactorLoginRequest {
+  challengeToken: string;
+  code: string;
+}
+
+// ── Phase 6: passkeys (WebAuthn) ───────────────────────────────────────────
+
+/** A registered passkey shown on the Security page. */
+export interface PasskeyCredentialInfo {
+  id: string;
+  nickname: string | null;
+  transports: string[];
+  createdAt: string;
+  lastUsedAt: string | null;
+}
+
+/** Start of a registration ceremony: creation options for the browser. */
+export interface PasskeyRegistrationStart {
+  optionsJson: string;
+}
+
+export interface PasskeyRegistrationFinishRequest {
+  optionsJson: string;
+  responseJson: string;
+  nickname?: string;
+}
+
+/** Start of a passkey sign-in: assertion request echoed back on finish. */
+export interface PasskeyAuthenticationStart {
+  requestJson: string;
+  credentialsGetJson: string;
+}
+
+export interface PasskeyAuthenticationFinishRequest {
+  requestJson: string;
+  responseJson: string;
 }

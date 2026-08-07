@@ -152,7 +152,9 @@ public class PasskeyController {
      */
     @Operation(summary = "Start passkey sign-in",
             description = "Returns WebAuthn assertion options for the browser. Discovery-less: the "
-                    + "browser offers every discoverable credential for this site.")
+                    + "browser offers every discoverable credential for this relying party "
+                    + "(an optional username is accepted for API forward-compatibility but not "
+                    + "used to scope the assertion yet).")
     @PostMapping("/authenticate/start")
     public ResponseEntity<StandardResponse<PasskeyAuthenticationStartResponse>> authenticateStart(
             @RequestBody(required = false) PasskeyAuthenticationStartRequest request,

@@ -18,6 +18,7 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Loader } from '@/components/common/Loader';
+import { PasskeysPanel, TwoFactorPanel } from '@/components/security/MfaPanels';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import {
@@ -32,10 +33,11 @@ import type { SessionInfo, TrustedDeviceInfo } from '@/types';
 import { cn } from '@/utils/cn';
 import { formatRelativeTime } from '@/utils/format';
 
-type Tab = 'overview' | 'sessions' | 'devices' | 'history' | 'logs';
+type Tab = 'overview' | 'sessions' | 'devices' | 'history' | 'logs' | 'mfa';
 
 const TABS: readonly { id: Tab; label: string }[] = [
   { id: 'overview', label: 'Overview' },
+  { id: 'mfa', label: '2FA & passkeys' },
   { id: 'sessions', label: 'Active sessions' },
   { id: 'devices', label: 'Trusted devices' },
   { id: 'history', label: 'Login history' },
@@ -146,9 +148,11 @@ export function SecurityPage() {
                     okLabel="Email verified"
                     badLabel="Email not verified"
                   />
-                  <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                    2FA — coming soon
-                  </span>
+                  <StatusPill
+                    ok={Boolean(overview.data!.twoFactorEnabled)}
+                    okLabel="2FA on"
+                    badLabel="2FA off"
+                  />
                   <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
                     {overview.data!.activeSessionCount} active session{overview.data!.activeSessionCount === 1 ? '' : 's'}
                   </span>
@@ -215,8 +219,12 @@ export function SecurityPage() {
               <ProtectionRow
                 icon={Fingerprint}
                 title="Two-factor authentication"
-                detail="TOTP app codes (Google Authenticator, Authy) ship in Phase 3."
-                ok={false}
+                detail={
+                  overview.data?.twoFactorEnabled
+                    ? 'A code from your authenticator app is required at sign-in.'
+                    : 'Add an authenticator app code for stronger protection.'
+                }
+                ok={Boolean(overview.data?.twoFactorEnabled)}
               />
               <ProtectionRow
                 icon={ShieldX}
@@ -258,6 +266,13 @@ export function SecurityPage() {
               </div>
             </CardBody>
           </Card>
+        </div>
+      )}
+
+      {tab === 'mfa' && (
+        <div className="space-y-6">
+          <TwoFactorPanel />
+          <PasskeysPanel />
         </div>
       )}
 
@@ -571,6 +586,13 @@ function formatAction(action: string): string {
     DEVICE_UNTRUSTED: 'Trusted device removed',
     ACCOUNT_ACTIVATED: 'Account activated',
     ACCOUNT_LOCKED: 'Account locked after failed attempts',
+    // ── Phase 6: 2FA & passkeys ───────────────────────────────────────────
+    '2FA_ENABLED': 'Two-factor authentication enabled',
+    '2FA_DISABLED': 'Two-factor authentication disabled',
+    '2FA_VERIFIED': 'Two-factor code verified',
+    BACKUP_CODES_REGENERATED: 'Backup codes regenerated',
+    PASSKEY_REGISTERED: 'Passkey registered',
+    PASSKEY_REMOVED: 'Passkey removed',
   };
   return labels[action] ?? action.replaceAll('_', ' ');
 }

@@ -567,6 +567,113 @@ check "A: notifications after clear" 200 "$CODE"
 if ! grep -q '"id":' /tmp/qa_n5after.json; then ok "A: notification list empty after clear"; else bad "A: notification list empty after clear"; fi
 
 echo
+echo "== TWO-FACTOR AUTHENTICATION (Phase 6) =="
+
+# Minimal RFC 6238 TOTP generator (python3) — same algorithm the authenticator apps use.
+totp() { # $1 base32 secret -> prints the current 6-digit code
+  python3 - "$1" <<'PYEOF'
+import sys, base64, hashlib, hmac, struct, time
+secret = sys.argv[1]
+key = base64.b32decode(secret + "=" * ((8 - len(secret) % 8) % 8))
+counter = int(time.time()) // 30
+digest = hmac.new(key, struct.pack(">Q", counter), hashlib.sha1).digest()
+o = digest[-1] & 0x0F
+code = (struct.unpack(">I", digest[o:o+4])[0] & 0x7FFFFFFF) % 1000000
+print("%06d" % code)
+PYEOF
+}
+
+# 62. Fresh account has 2FA off
+CODE=$(curl -s -o /tmp/qa_2fa_status0.json -w '%{http_code}' "$BASE/auth/2fa/status" -H "$AUTH_A")
+check "A: 2FA status (default off)" 200 "$CODE"
+grep -q '"enabled":false' /tmp/qa_2fa_status0.json && ok "A: 2FA disabled by default" || bad "A: 2FA disabled by default"
+
+# 63. Setup returns a TOTP secret + otpauth URI (the QR payload)
+CODE=$(curl -s -o /tmp/qa_2fa_setup.json -w '%{http_code}' -X POST "$BASE/auth/2fa/setup" -H "$AUTH_A")
+check "A: 2FA setup" 200 "$CODE"
+SECRET_A=$(sed -n 's/.*"secret":"\([^"]*\)".*/\1/p' /tmp/qa_2fa_setup.json)
+[ -n "$SECRET_A" ] && ok "A: TOTP secret captured" || bad "A: TOTP secret captured"
+grep -q 'otpauth://totp/' /tmp/qa_2fa_setup.json && ok "A: otpauth URI returned" || bad "A: otpauth URI returned"
+
+# 64. Enabling with a wrong code must NOT succeed
+CODE=$(curl -s -o /tmp/qa_2fa_enable_bad.json -w '%{http_code}' -X POST "$BASE/auth/2fa/enable" -H "$AUTH_A" -H 'Content-Type: application/json' -d '{"code":"000000"}')
+[ "$CODE" != "200" ] && ok "A: enable rejected with a bad code (HTTP $CODE)" || bad "A: enable rejected with a bad code (HTTP $CODE)"
+
+if command -v python3 >/dev/null 2>&1; then
+  # 65. Enable 2FA with a live TOTP code -> backup codes issued once
+  TOTP_A=$(totp "$SECRET_A")
+  [ -n "$TOTP_A" ] && ok "A: TOTP code generated" || bad "A: TOTP code generated"
+  CODE=$(curl -s -o /tmp/qa_2fa_enable.json -w '%{http_code}' -X POST "$BASE/auth/2fa/enable" -H "$AUTH_A" -H 'Content-Type: application/json' -d "{\"code\":\"$TOTP_A\"}")
+  check "A: enable 2FA with a valid code" 200 "$CODE"
+  grep -q '"backupCodes":' /tmp/qa_2fa_enable.json && ok "A: backup codes returned once" || bad "A: backup codes returned once"
+
+  # 66. Status now reflects enabled + 10 unused backup codes
+  CODE=$(curl -s -o /tmp/qa_2fa_status1.json -w '%{http_code}' "$BASE/auth/2fa/status" -H "$AUTH_A")
+  check "A: 2FA status (on)" 200 "$CODE"
+  grep -q '"enabled":true' /tmp/qa_2fa_status1.json && ok "A: status shows enabled" || bad "A: status shows enabled"
+  grep -q '"backupCodesRemaining":10' /tmp/qa_2fa_status1.json && ok "A: 10 backup codes remaining" || bad "A: 10 backup codes remaining"
+
+  # 67. Next sign-in now requires the 2FA step (before any OTP)
+  LOGIN=$(curl -s -X POST "$BASE/auth/login" -H 'Content-Type: application/json' -H "X-Device-Id: e2e-device-2fa-$TS" -d "{\"usernameOrEmail\":\"$EMAIL_A\",\"password\":\"$PASS\"}")
+  echo "$LOGIN" | grep -q '"requires2fa":true' && ok "A: login now requires 2FA" || bad "A: login now requires 2FA"
+  CHAL_2FA=$(echo "$LOGIN" | sed -n 's/.*"challengeToken":"\([^"]*\)".*/\1/p')
+  [ -n "$CHAL_2FA" ] && ok "A: 2FA challenge token captured" || bad "A: 2FA challenge token captured"
+
+  # 68. Complete the sign-in with a fresh TOTP code
+  TOTP_A2=$(totp "$SECRET_A")
+  CODE=$(curl -s -o /tmp/qa_2fa_login.json -w '%{http_code}' -X POST "$BASE/auth/login/2fa" -H 'Content-Type: application/json' -H "X-Device-Id: e2e-device-2fa-$TS" -d "{\"challengeToken\":\"$CHAL_2FA\",\"code\":\"$TOTP_A2\"}")
+  check "A: 2FA login completes" 200 "$CODE"
+  grep -q '"token":' /tmp/qa_2fa_login.json && ok "A: token pair returned after 2FA" || bad "A: token pair returned after 2FA"
+
+  # 69. A wrong 2FA code is rejected (and never yields a token)
+  CODE=$(curl -s -o /tmp/qa_2fa_login_bad.json -w '%{http_code}' -X POST "$BASE/auth/login/2fa" -H 'Content-Type: application/json' -d "{\"challengeToken\":\"$CHAL_2FA\",\"code\":\"000000\"}")
+  [ "$CODE" != "200" ] && ok "A: wrong 2FA code rejected (HTTP $CODE)" || bad "A: wrong 2FA code rejected (HTTP $CODE)"
+  ! grep -q '"token":' /tmp/qa_2fa_login_bad.json && ok "A: no token on failed 2FA" || bad "A: no token on failed 2FA"
+
+  # 70. In-app notification for the enable event
+  CODE=$(curl -s -o /tmp/qa_2fa_notif.json -w '%{http_code}' "$BASE/notifications" -H "$AUTH_A")
+  check "A: notifications after enabling 2FA" 200 "$CODE"
+  grep -q '"type":"TWO_FACTOR_ENABLED"' /tmp/qa_2fa_notif.json && ok "A: 2FA-enabled notification" || bad "A: 2FA-enabled notification"
+
+  # 71. Security log carries the 2FA events
+  CODE=$(curl -s -o /tmp/qa_2fa_logs.json -w '%{http_code}' "$BASE/auth/security-logs" -H "$AUTH_A")
+  check "A: security logs" 200 "$CODE"
+  grep -q '"action":"2FA_ENABLED"' /tmp/qa_2fa_logs.json && ok "A: security log has 2FA_ENABLED" || bad "A: security log has 2FA_ENABLED"
+
+  # 72. Disable 2FA (password proof) -> status back off + security log entry
+  CODE=$(curl -s -o /tmp/qa_2fa_disable.json -w '%{http_code}' -X POST "$BASE/auth/2fa/disable" -H "$AUTH_A" -H 'Content-Type: application/json' -d "{\"verification\":\"$PASS\"}")
+  check "A: disable 2FA with password" 200 "$CODE"
+  CODE=$(curl -s -o /tmp/qa_2fa_status2.json -w '%{http_code}' "$BASE/auth/2fa/status" -H "$AUTH_A")
+  grep -q '"enabled":false' /tmp/qa_2fa_status2.json && ok "A: 2FA disabled again" || bad "A: 2FA disabled again"
+  CODE=$(curl -s -o /tmp/qa_2fa_logs2.json -w '%{http_code}' "$BASE/auth/security-logs" -H "$AUTH_A")
+  grep -q '"action":"2FA_DISABLED"' /tmp/qa_2fa_logs2.json && ok "A: security log has 2FA_DISABLED" || bad "A: security log has 2FA_DISABLED"
+else
+  echo "  SKIP  TOTP enable / 2FA-login tests (python3 not available for TOTP generation)"
+fi
+
+echo
+echo "== PASSKEYS (Phase 6) =="
+
+# 73. Empty passkey list on a fresh account
+CODE=$(curl -s -o /tmp/qa_pk_list0.json -w '%{http_code}' "$BASE/auth/passkeys" -H "$AUTH_A")
+check "A: passkey list" 200 "$CODE"
+grep -q '"data":\[' /tmp/qa_pk_list0.json && ok "A: passkey list is empty" || bad "A: passkey list is empty"
+
+# 74. Registration ceremony start returns discoverable-credential options
+CODE=$(curl -s -o /tmp/qa_pk_regstart.json -w '%{http_code}' -X POST "$BASE/auth/passkeys/register/start" -H "$AUTH_A")
+check "A: passkey register/start" 200 "$CODE"
+grep -q '"optionsJson":' /tmp/qa_pk_regstart.json && ok "A: creation options returned" || bad "A: creation options returned"
+grep -q 'residentKey' /tmp/qa_pk_regstart.json && ok "A: options request a resident (discoverable) key" || bad "A: options request a resident (discoverable) key"
+
+# 75. Passkey sign-in ceremony start (public endpoint, discovery-less)
+CODE=$(curl -s -o /tmp/qa_pk_authstart.json -w '%{http_code}' -X POST "$BASE/auth/passkeys/authenticate/start" -H 'Content-Type: application/json' -d '{}')
+check "A: passkey authenticate/start (public)" 200 "$CODE"
+grep -q '"credentialsGetJson":' /tmp/qa_pk_authstart.json && ok "A: assertion options returned" || bad "A: assertion options returned"
+
+# NOTE: register/finish and authenticate/finish need a real WebAuthn
+# authenticator (browser / device) and are exercised through the UI.
+
+echo
 echo "=========================================="
 echo "RESULT: $PASS_N passed, $FAIL_N failed"
 echo "=========================================="

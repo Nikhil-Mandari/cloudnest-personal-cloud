@@ -7,9 +7,10 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Passkey sign-in start: an optional username. When supplied, the assertion
- * is restricted to that user's registered credentials (discoverable
- * credentials still work when omitted).
+ * Passkey sign-in start: an optional username. The current implementation
+ * runs discovery-less assertions (the browser offers every discoverable
+ * credential for the relying party), so this field is accepted for API
+ * forward-compatibility and is not yet used for scoping.
  */
 @Getter
 @Setter

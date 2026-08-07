@@ -63,6 +63,7 @@ export function VerifyOtpPage() {
 
   const email = state?.email ?? 'your email address';
   const isLogin = state?.purpose === 'login';
+  const isTwoFactor = state?.purpose === '2fa';
   const code = digits.join('');
   const complete = code.length === OTP_LENGTH;
 
@@ -142,16 +143,24 @@ export function VerifyOtpPage() {
           <KeyRound className="text-brand-600 h-7 w-7 dark:text-brand-400" />
         </div>
         <h1 className="text-2xl font-bold tracking-tight text-gray-900 dark:text-white">
-          {isLogin ? 'Enter your sign-in code' : 'Verify your email'}
+          {isTwoFactor ? 'Enter your authenticator code' : isLogin ? 'Enter your sign-in code' : 'Verify your email'}
         </h1>
-        <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
-          We sent a {OTP_LENGTH}-digit code to <span className="font-medium text-gray-700 dark:text-gray-200">{email}</span>.
-          <br />
-          It expires in <span className="font-medium">{expiryMinutes} minutes</span>.
-        </p>
+        {isTwoFactor ? (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            Open your authenticator app for <span className="font-medium text-gray-700 dark:text-gray-200">{email}</span>
+            <br />
+            and enter the {OTP_LENGTH}-digit code (or a backup code).
+          </p>
+        ) : (
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">
+            We sent a {OTP_LENGTH}-digit code to <span className="font-medium text-gray-700 dark:text-gray-200">{email}</span>.
+            <br />
+            It expires in <span className="font-medium">{expiryMinutes} minutes</span>.
+          </p>
+        )}
       </div>
 
-      {devOtp && (
+      {devOtp && !isTwoFactor && (
         <div className="mb-6 flex items-center gap-3 rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
           <ShieldCheck className="h-5 w-5 shrink-0" />
           <div>
@@ -204,12 +213,17 @@ export function VerifyOtpPage() {
           disabled={!complete}
           className="mt-7"
         >
-          {isLogin ? 'Verify & sign in' : 'Activate account'}
+          {isLogin || isTwoFactor ? 'Verify & sign in' : 'Activate account'}
         </Button>
       </form>
 
       <div className="mt-5 text-center text-sm text-gray-500 dark:text-gray-400">
-        {remaining > 0 ? (
+        {isTwoFactor ? (
+          <p>
+            Can&apos;t find your code? Use one of your{' '}
+            <span className="font-medium text-gray-700 dark:text-gray-200">backup codes</span> instead.
+          </p>
+        ) : remaining > 0 ? (
           <p>
             Didn&apos;t get the code? Resend available in{' '}
             <span className="font-mono font-semibold text-gray-700 dark:text-gray-200">
@@ -230,7 +244,7 @@ export function VerifyOtpPage() {
       </div>
 
       <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
-        {isLogin ? (
+        {isLogin || isTwoFactor ? (
           <>
             Wrong device?{' '}
             <Link

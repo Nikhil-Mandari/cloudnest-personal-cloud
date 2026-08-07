@@ -17,10 +17,22 @@ import type {
   ResetPasswordRequest,
   ResetTokenResponse,
   ResendOtpRequest,
+  DisableTwoFactorRequest,
+  EnableTwoFactorRequest,
+  EnableTwoFactorResponse,
+  PasskeyAuthenticationFinishRequest,
+  PasskeyAuthenticationStart,
+  PasskeyCredentialInfo,
+  PasskeyRegistrationFinishRequest,
+  PasskeyRegistrationStart,
+  RegenerateBackupCodesResponse,
   SecurityLogEntry,
   SecurityOverview,
   SessionInfo,
   TrustedDeviceInfo,
+  TwoFactorLoginRequest,
+  TwoFactorSetup,
+  TwoFactorStatus,
   UserProfile,
   VerifyOtpRequest,
 } from '@/types';
@@ -57,6 +69,14 @@ export const authService = {
   verifyLogin: (payload: VerifyOtpRequest, rememberDevice = false) =>
     apiClient.post<ApiResponse<AuthResponse>>(
       API_ENDPOINTS.auth.verifyLogin,
+      payload,
+      { skipAuthRedirect: true, silent: true, params: { rememberDevice } },
+    ),
+
+  /** Completes a sign-in blocked on the 2FA step (TOTP or backup code). */
+  verifyTwoFactorLogin: (payload: TwoFactorLoginRequest, rememberDevice = false) =>
+    apiClient.post<ApiResponse<AuthResponse>>(
+      API_ENDPOINTS.auth.verifyTwoFactorLogin,
       payload,
       { skipAuthRedirect: true, silent: true, params: { rememberDevice } },
     ),
@@ -121,6 +141,59 @@ export const authService = {
 
   getSecurityOverview: () =>
     apiClient.get<ApiResponse<SecurityOverview>>(API_ENDPOINTS.auth.securityOverview),
+
+  // ── Phase 6: two-factor authentication (TOTP) ────────────────────────────
+  getTwoFactorStatus: () =>
+    apiClient.get<ApiResponse<TwoFactorStatus>>(API_ENDPOINTS.auth.twoFactor.status),
+
+  twoFactorSetup: () =>
+    apiClient.post<ApiResponse<TwoFactorSetup>>(API_ENDPOINTS.auth.twoFactor.setup),
+
+  enableTwoFactor: (payload: EnableTwoFactorRequest) =>
+    apiClient.post<ApiResponse<EnableTwoFactorResponse>>(
+      API_ENDPOINTS.auth.twoFactor.enable,
+      payload,
+    ),
+
+  disableTwoFactor: (payload: DisableTwoFactorRequest) =>
+    apiClient.post<ApiResponse<null>>(API_ENDPOINTS.auth.twoFactor.disable, payload),
+
+  regenerateBackupCodes: () =>
+    apiClient.post<ApiResponse<RegenerateBackupCodesResponse>>(
+      API_ENDPOINTS.auth.twoFactor.regenerateBackupCodes,
+    ),
+
+  // ── Phase 6: passkeys (WebAuthn) ────────────────────────────────────────
+  listPasskeys: () =>
+    apiClient.get<ApiResponse<PasskeyCredentialInfo[]>>(API_ENDPOINTS.auth.passkeys.list),
+
+  passkeyRegisterStart: () =>
+    apiClient.post<ApiResponse<PasskeyRegistrationStart>>(
+      API_ENDPOINTS.auth.passkeys.registerStart,
+    ),
+
+  passkeyRegisterFinish: (payload: PasskeyRegistrationFinishRequest) =>
+    apiClient.post<ApiResponse<PasskeyCredentialInfo>>(
+      API_ENDPOINTS.auth.passkeys.registerFinish,
+      payload,
+    ),
+
+  removePasskey: (id: string) =>
+    apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.auth.passkeys.remove(id)),
+
+  passkeyAuthenticateStart: () =>
+    apiClient.post<ApiResponse<PasskeyAuthenticationStart>>(
+      API_ENDPOINTS.auth.passkeys.authenticateStart,
+      undefined,
+      { skipAuthRedirect: true, silent: true },
+    ),
+
+  passkeyAuthenticateFinish: (payload: PasskeyAuthenticationFinishRequest) =>
+    apiClient.post<ApiResponse<AuthResponse>>(
+      API_ENDPOINTS.auth.passkeys.authenticateFinish,
+      payload,
+      { skipAuthRedirect: true, silent: true },
+    ),
 
   // ── Legacy / profile ───────────────────────────────────────────────────
 

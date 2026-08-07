@@ -23,6 +23,19 @@ CREATE TABLE IF NOT EXISTS two_factor_settings (
     UNIQUE KEY uk_two_factor_user (user_id)
 ) ENGINE = InnoDB DEFAULT CHARSET = utf8mb4;
 
+-- Backfill for databases that applied an earlier revision without the
+-- replay-protection column (MySQL has no ADD COLUMN IF NOT EXISTS).
+SET @col_exists := (
+    SELECT COUNT(*) FROM information_schema.COLUMNS
+    WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'two_factor_settings'
+      AND COLUMN_NAME = 'last_used_counter');
+SET @ddl := IF(@col_exists = 0,
+    'ALTER TABLE two_factor_settings ADD COLUMN last_used_counter BIGINT NULL AFTER enabled_at',
+    'SELECT 1');
+PREPARE stmt FROM @ddl;
+EXECUTE stmt;
+DEALLOCATE PREPARE stmt;
+
 -- Single-use backup codes (SHA-256 hashes; the plaintext is shown once).
 CREATE TABLE IF NOT EXISTS backup_codes (
     id         BIGINT      NOT NULL AUTO_INCREMENT,
