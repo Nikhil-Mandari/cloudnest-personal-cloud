@@ -5,6 +5,9 @@ import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
+import com.cloudnest.file.dto.UploadResultResponse;
+import com.cloudnest.file.entity.DuplicateAction;
+import com.cloudnest.file.exception.BadRequestException;
 import com.cloudnest.file.service.FileService;
 import com.cloudnest.file.util.StandardResponse;
 import io.swagger.v3.oas.annotations.Operation;
@@ -41,6 +44,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
  * REST controller for file operations.
@@ -70,30 +74,35 @@ public class FileController {
      * <p>
      * The binary content is uploaded to MinIO with a unique
      * {@code UUID_originalFileName} object key; the metadata record — including
-     * the SHA-256 checksum — is persisted in MySQL.
+     * the SHA-256 checksum and the virus-scan status — is persisted in MySQL.
+     * Identical content for the same owner is reported via {@code onDuplicate}.
      *
      * @param userIdHeader the authenticated user's ID (set by API Gateway from JWT)
      * @param file         the multipart file to upload
      * @param folderId     the destination folder UUID (optional, null = root)
      * @param isPublic     whether the file should be publicly accessible
+     * @param onDuplicate  duplicate resolution: ASK (default — report only),
+     *                     KEEP_BOTH, SKIP or REPLACE
      * @param httpRequest  the current HTTP request (for building response path)
-     * @return 201 Created with the newly created file metadata
+     * @return 201 Created with the upload result (file + duplicate metadata)
      */
     @Operation(
             summary = "Upload a file",
-            description = "Uploads a file to MinIO object storage and persists its metadata " +
-                    "(object key, bucket, content type, size, SHA-256 checksum) in MySQL.",
+            description = "Uploads a file to MinIO object storage, virus-scans it, detects " +
+                    "duplicate content (SHA-256) and persists its metadata in MySQL. " +
+                    "`onDuplicate` controls how identical content is handled.",
             requestBody = @io.swagger.v3.oas.annotations.parameters.RequestBody(
                     content = @Content(mediaType = MediaType.MULTIPART_FORM_DATA_VALUE)))
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "201", description = "File uploaded successfully"),
+            @ApiResponse(responseCode = "201", description = "Upload handled (file created or duplicate reported)"),
             @ApiResponse(responseCode = "400", description = "Empty file, invalid request, or folder not found"),
             @ApiResponse(responseCode = "401", description = "Missing user identity"),
             @ApiResponse(responseCode = "413", description = "File exceeds the maximum allowed size"),
+            @ApiResponse(responseCode = "422", description = "Virus detected — upload blocked"),
             @ApiResponse(responseCode = "500", description = "MinIO or database failure")
     })
     @PostMapping(value = "/upload", consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
-    public ResponseEntity<StandardResponse<FileResponse>> uploadFile(
+    public ResponseEntity<StandardResponse<UploadResultResponse>> uploadFile(
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader,
             @Parameter(description = "The file to upload", required = true,
@@ -105,10 +114,13 @@ public class FileController {
             @RequestParam(required = false) String folderId,
             @Parameter(description = "Whether the file should be publicly accessible", example = "false")
             @RequestParam(defaultValue = "false") boolean isPublic,
+            @Parameter(description = "Duplicate resolution (ASK / KEEP_BOTH / SKIP / REPLACE)",
+                    example = "ASK")
+            @RequestParam(defaultValue = "ASK") String onDuplicate,
             HttpServletRequest httpRequest) {
 
-        log.info("POST /api/files/upload - userId={}, folderId={}, fileName='{}', size={}",
-                userIdHeader, folderId, file.getOriginalFilename(), file.getSize());
+        log.info("POST /api/files/upload - userId={}, folderId={}, fileName='{}', size={}, onDuplicate={}",
+                userIdHeader, folderId, file.getOriginalFilename(), file.getSize(), onDuplicate);
 
         UploadFileRequest request = UploadFileRequest.builder()
                 .originalFileName(Optional.ofNullable(file.getOriginalFilename()).orElse("file"))
@@ -119,22 +131,35 @@ public class FileController {
                 .isPublic(isPublic)
                 .build();
 
-        FileResponse response = fileService.uploadFile(request, file);
+        UploadResultResponse response = fileService.uploadFile(
+                request, file, parseDuplicateAction(onDuplicate));
 
         return ResponseEntity.status(HttpStatus.CREATED)
-                .body(StandardResponse.<FileResponse>builder()
+                .body(StandardResponse.<UploadResultResponse>builder()
                         .success(true)
-                        .message("File uploaded successfully")
+                        .message(response.getDuplicate()
+                                ? "Duplicate content detected"
+                                : "File uploaded successfully")
                         .data(response)
                         .path(httpRequest.getRequestURI())
                         .build());
     }
 
     /**
-     * Lists all active file metadata records for the authenticated user.
+     * Lists the authenticated user's active files.
+     * <p>
+     * <ul>
+     *   <li>No {@code folderId} — returns every active file (used by the
+     *       dashboard's "recent files" and global views).</li>
+     *   <li>{@code folderId=&lt;uuid&gt;} — returns only the files stored inside
+     *       that folder (folder navigation).</li>
+     *   <li>{@code folderId=} (empty) — returns root-level files only.</li>
+     * </ul>
      */
     @Operation(summary = "List user files",
-            description = "Returns all active file metadata records owned by the authenticated user.")
+            description = "Returns active file metadata records owned by the authenticated user. " +
+                    "Without a `folderId` every active file is returned; with `folderId` only the " +
+                    "files inside that folder (empty value = root level) are returned.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Files retrieved successfully"),
             @ApiResponse(responseCode = "401", description = "Missing user identity"),
@@ -144,11 +169,22 @@ public class FileController {
     public ResponseEntity<StandardResponse<List<FileMetadataResponse>>> listUserFiles(
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader,
+            @Parameter(description = "Folder UUID to list files from (omitted = all files, " +
+                    "empty = root level)", example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
+            @RequestParam(required = false) String folderId,
             HttpServletRequest httpRequest) {
 
-        log.info("GET /api/files - userId={}", userIdHeader);
+        log.info("GET /api/files - userId={}, folderId={}", userIdHeader, folderId);
 
-        List<FileMetadataResponse> files = fileService.getUserFiles(userIdHeader);
+        // Reject malformed folderId values with a 400 instead of silently
+        // returning an empty list.
+        if (folderId != null && !folderId.isBlank() && !isValidUuid(folderId)) {
+            throw new BadRequestException("Invalid folderId — must be a valid UUID");
+        }
+
+        List<FileMetadataResponse> files = (folderId == null)
+                ? fileService.getUserFiles(userIdHeader)
+                : fileService.getUserFilesByFolder(userIdHeader, folderId);
 
         return ResponseEntity.ok(
                 StandardResponse.<List<FileMetadataResponse>>builder()
@@ -459,22 +495,24 @@ public class FileController {
     }
 
     /**
-     * Hard-deletes a file: removes the object from MinIO and deletes the
-     * metadata row from MySQL.
+     * Moves a file to the trash (soft delete). The metadata status is set to
+     * {@code DELETED}; the MinIO object is retained so the file can be restored
+     * from the trash.
      *
      * @param id           the internal primary key of the file record
      * @param userIdHeader the authenticated user's ID
      * @param httpRequest  the current HTTP request (for building response path)
      * @return 200 OK confirming the deletion
      */
-    @Operation(summary = "Delete a file",
-            description = "Permanently deletes a file: removes the object from MinIO and deletes the " +
-                    "metadata row from MySQL. If the MinIO deletion fails, nothing is deleted.")
+    @Operation(summary = "Move a file to the trash",
+            description = "Soft-deletes a file: its status is set to DELETED and the MinIO object is " +
+                    "retained so the file can be restored from the trash.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "File deleted successfully"),
+            @ApiResponse(responseCode = "200", description = "File moved to trash successfully"),
+            @ApiResponse(responseCode = "400", description = "File is already in the trash"),
             @ApiResponse(responseCode = "403", description = "File belongs to another user"),
             @ApiResponse(responseCode = "404", description = "File not found"),
-            @ApiResponse(responseCode = "500", description = "MinIO failure")
+            @ApiResponse(responseCode = "500", description = "Unexpected server error")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<StandardResponse<Void>> deleteFile(
@@ -491,13 +529,13 @@ public class FileController {
         return ResponseEntity.ok(
                 StandardResponse.<Void>builder()
                         .success(true)
-                        .message("File deleted successfully")
+                        .message("File moved to trash")
                         .path(httpRequest.getRequestURI())
                         .build());
     }
 
     /**
-     * Restores a soft-deleted (legacy) file record by setting its status back
+     * Restores a soft-deleted (trashed) file record by setting its status back
      * to {@code ACTIVE}.
      *
      * @param id           the internal primary key of the file record
@@ -505,9 +543,8 @@ public class FileController {
      * @param httpRequest  the current HTTP request (for building response path)
      * @return 200 OK with the restored file metadata
      */
-    @Operation(summary = "Restore a soft-deleted file (legacy)",
-            description = "Restores a legacy soft-deleted file record by setting its status back to ACTIVE. " +
-                    "Files deleted through the DELETE endpoint are permanently removed.")
+    @Operation(summary = "Restore a file from the trash",
+            description = "Restores a soft-deleted (trashed) file record by setting its status back to ACTIVE.")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "File restored successfully"),
             @ApiResponse(responseCode = "400", description = "File is already active"),
@@ -536,9 +573,124 @@ public class FileController {
                         .build());
     }
 
+    /**
+     * Lists all soft-deleted (trashed) file metadata records for the
+     * authenticated user.
+     */
+    @Operation(summary = "List trashed files",
+            description = "Returns all soft-deleted file metadata records owned by the authenticated user " +
+                    "(files that were moved to the trash).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Trashed files retrieved successfully"),
+            @ApiResponse(responseCode = "401", description = "Missing user identity"),
+            @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
+    @GetMapping("/trash")
+    public ResponseEntity<StandardResponse<List<FileMetadataResponse>>> listTrashFiles(
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("GET /api/files/trash - userId={}", userIdHeader);
+
+        List<FileMetadataResponse> files = fileService.getTrashFiles(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<List<FileMetadataResponse>>builder()
+                        .success(true)
+                        .message("Trashed files retrieved successfully")
+                        .data(files)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Permanently deletes a trashed file: removes the object from MinIO and
+     * deletes the metadata row from MySQL. This cannot be undone.
+     *
+     * @param id           the internal primary key of the file record
+     * @param userIdHeader the authenticated user's ID
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK confirming the deletion
+     */
+    @Operation(summary = "Permanently delete a trashed file",
+            description = "Permanently removes a trashed file: the MinIO object is deleted and the " +
+                    "metadata row is removed from MySQL. This cannot be undone.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "File permanently deleted"),
+            @ApiResponse(responseCode = "400", description = "File is not in the trash"),
+            @ApiResponse(responseCode = "403", description = "File belongs to another user"),
+            @ApiResponse(responseCode = "404", description = "File not found"),
+            @ApiResponse(responseCode = "500", description = "MinIO failure")
+    })
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<StandardResponse<Void>> permanentlyDeleteFile(
+            @Parameter(description = "Internal file ID", example = "1")
+            @PathVariable Long id,
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("DELETE /api/files/{}/permanent - userId={}", id, userIdHeader);
+
+        fileService.permanentlyDeleteFile(id, userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<Void>builder()
+                        .success(true)
+                        .message("File permanently deleted")
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Permanently deletes every trashed file owned by the authenticated user.
+     *
+     * @param userIdHeader the authenticated user's ID
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK confirming the operation
+     */
+    @Operation(summary = "Empty the trash",
+            description = "Permanently deletes every trashed file owned by the authenticated user. " +
+                    "This cannot be undone.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Trash emptied successfully"),
+            @ApiResponse(responseCode = "401", description = "Missing user identity"),
+            @ApiResponse(responseCode = "500", description = "MinIO or database failure")
+    })
+    @DeleteMapping("/trash")
+    public ResponseEntity<StandardResponse<Void>> emptyTrash(
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("DELETE /api/files/trash - userId={}", userIdHeader);
+
+        fileService.emptyTrash(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<Void>builder()
+                        .success(true)
+                        .message("Trash emptied successfully")
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Returns whether the given value is a well-formed UUID.
+     */
+    private boolean isValidUuid(String value) {
+        try {
+            UUID.fromString(value);
+            return true;
+        } catch (IllegalArgumentException e) {
+            return false;
+        }
+    }
 
     /**
      * Resolves the content type, falling back to a default when absent.
@@ -547,6 +699,22 @@ public class FileController {
         return (contentType == null || contentType.isBlank())
                 ? DEFAULT_CONTENT_TYPE
                 : contentType;
+    }
+
+    /**
+     * Parses the {@code onDuplicate} query parameter, defaulting to ASK for
+     * unknown values so the client is always told about duplicates.
+     */
+    private DuplicateAction parseDuplicateAction(String raw) {
+        if (raw == null || raw.isBlank()) {
+            return DuplicateAction.ASK;
+        }
+        try {
+            return DuplicateAction.valueOf(raw.trim().toUpperCase());
+        } catch (IllegalArgumentException e) {
+            log.warn("Unknown onDuplicate value '{}' — defaulting to ASK", raw);
+            return DuplicateAction.ASK;
+        }
     }
 
     /**

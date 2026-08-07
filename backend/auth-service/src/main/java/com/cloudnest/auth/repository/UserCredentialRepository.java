@@ -1,6 +1,7 @@
 package com.cloudnest.auth.repository;
 
 import com.cloudnest.auth.entity.UserCredential;
+import com.cloudnest.auth.entity.UserCredential.AccountStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
 
@@ -43,4 +44,12 @@ public interface UserCredentialRepository extends JpaRepository<UserCredential, 
      * @return {@code true} if a user with the given email exists
      */
     boolean existsByEmail(String email);
+
+    // ── Admin aggregates ────────────────────────────────────────────────────
+
+    long countByStatus(AccountStatus status);
+
+    long countByEnabled(Boolean enabled);
+
+    long countByRole(String role);
 }

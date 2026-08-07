@@ -1,8 +1,12 @@
 package com.cloudnest.user.controller;
 
+import com.cloudnest.user.dto.AdminUserSummaryResponse;
+import com.cloudnest.user.dto.CreateUserProfileRequest;
+import com.cloudnest.user.dto.PagedUsersResponse;
 import com.cloudnest.user.dto.UpdateProfileRequest;
 import com.cloudnest.user.dto.UserProfileResponse;
 import com.cloudnest.user.service.UserService;
+import com.cloudnest.user.util.AdminGuard;
 import com.cloudnest.user.util.StandardResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -12,6 +16,7 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
@@ -156,6 +161,91 @@ public class UserController {
                         .success(true)
                         .message("Users retrieved successfully")
                         .data(users)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Provisioning endpoint used by the Auth Service (Feign, direct call) after
+     * registration and by the admin bootstrap. Idempotent.
+     *
+     * @param roleHeader   caller role (set by gateway from JWT, or by the Auth
+     *                     Service's Feign interceptor for internal calls)
+     * @param request      the provisioning payload
+     * @return 200 OK with the created (or existing) profile
+     */
+    @PostMapping
+    public ResponseEntity<StandardResponse<UserProfileResponse>> createProfile(
+            @RequestHeader(value = "X-User-Role", required = false) String roleHeader,
+            @Valid @RequestBody CreateUserProfileRequest request,
+            HttpServletRequest httpRequest) {
+
+        AdminGuard.requireAdmin(roleHeader);
+        log.info("POST /api/users - provisioning profile for email={}", request.getEmail());
+
+        UserProfileResponse profile = userService.createProfile(request);
+
+        return ResponseEntity.status(HttpStatus.CREATED)
+                .body(StandardResponse.<UserProfileResponse>builder()
+                        .success(true)
+                        .message("User profile provisioned successfully")
+                        .data(profile)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Platform-wide user aggregates for the admin dashboard (admin only).
+     *
+     * @param roleHeader caller role (set by gateway from JWT)
+     * @return 200 OK with aggregate user statistics
+     */
+    @GetMapping("/admin/summary")
+    public ResponseEntity<StandardResponse<AdminUserSummaryResponse>> getAdminSummary(
+            @RequestHeader(value = "X-User-Role", required = false) String roleHeader,
+            HttpServletRequest httpRequest) {
+
+        AdminGuard.requireAdmin(roleHeader);
+        log.info("GET /api/users/admin/summary");
+
+        AdminUserSummaryResponse summary = userService.getAdminSummary();
+
+        return ResponseEntity.ok(
+                StandardResponse.<AdminUserSummaryResponse>builder()
+                        .success(true)
+                        .message("Admin user summary retrieved successfully")
+                        .data(summary)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Paged, filterable user listing for the admin dashboard (admin only).
+     *
+     * @param roleHeader caller role (set by gateway from JWT)
+     * @param page       zero-based page index
+     * @param size       page size
+     * @param query      optional username/display-name/email filter
+     * @return 200 OK with the paged user list
+     */
+    @GetMapping("/admin")
+    public ResponseEntity<StandardResponse<PagedUsersResponse>> listUsersForAdmin(
+            @RequestHeader(value = "X-User-Role", required = false) String roleHeader,
+            @RequestParam(defaultValue = "0") int page,
+            @RequestParam(defaultValue = "20") int size,
+            @RequestParam(required = false, defaultValue = "") String query,
+            HttpServletRequest httpRequest) {
+
+        AdminGuard.requireAdmin(roleHeader);
+        log.info("GET /api/users/admin?page={}&size={}&query={}", page, size, query);
+
+        PagedUsersResponse result = userService.listUsersForAdmin(page, size, query);
+
+        return ResponseEntity.ok(
+                StandardResponse.<PagedUsersResponse>builder()
+                        .success(true)
+                        .message("Users retrieved successfully")
+                        .data(result)
                         .path(httpRequest.getRequestURI())
                         .build());
     }

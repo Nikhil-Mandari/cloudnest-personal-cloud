@@ -1,12 +1,19 @@
 package com.cloudnest.file.service;
 
+import com.cloudnest.file.dto.DownloadZipRequest;
 import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
+import com.cloudnest.file.dto.PagedAuditLogsResponse;
+import com.cloudnest.file.dto.ScanStatusResponse;
+import com.cloudnest.file.dto.StorageOverviewResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
+import com.cloudnest.file.dto.UploadResultResponse;
+import com.cloudnest.file.entity.DuplicateAction;
 import org.springframework.web.multipart.MultipartFile;
 
+import java.io.OutputStream;
 import java.util.List;
 
 /**
@@ -19,14 +26,16 @@ import java.util.List;
 public interface FileService {
 
     /**
-     * Uploads a file: validates it, computes its SHA-256 checksum, uploads the
-     * binary content to MinIO, and persists the metadata in MySQL.
+     * Uploads a file: validates it, computes its SHA-256 checksum, detects
+     * duplicate content (identical checksum for the same owner), virus-scans
+     * the content, uploads it to MinIO, and persists the metadata in MySQL.
      *
-     * @param request the metadata derived from the multipart upload
-     * @param file    the multipart file to upload
-     * @return the created file metadata in detailed response format
+     * @param request    the metadata derived from the multipart upload
+     * @param file       the multipart file to upload
+     * @param onDuplicate how to behave when identical content already exists
+     * @return the upload result incl. duplicate metadata
      */
-    FileResponse uploadFile(UploadFileRequest request, MultipartFile file);
+    UploadResultResponse uploadFile(UploadFileRequest request, MultipartFile file, DuplicateAction onDuplicate);
 
     /**
      * Retrieves all active file metadata records for a specific owner.
@@ -35,6 +44,19 @@ public interface FileService {
      * @return a list of lightweight file metadata responses
      */
     List<FileMetadataResponse> getUserFiles(Long ownerId);
+
+    /**
+     * Retrieves all ACTIVE file metadata records for a specific owner within a
+     * specific folder (or at the root when {@code folderId} is blank).
+     * <p>
+     * This powers the file explorer's folder navigation: opening a folder loads
+     * exactly the files stored inside it.
+     *
+     * @param ownerId  the ID of the file owner
+     * @param folderId the folder UUID, or {@code null}/{@code ""} for root-level files
+     * @return a list of lightweight file metadata responses
+     */
+    List<FileMetadataResponse> getUserFilesByFolder(Long ownerId, String folderId);
 
     /**
      * Retrieves detailed file metadata by its internal ID.
@@ -81,8 +103,9 @@ public interface FileService {
     FileResponse moveFile(Long id, String newFolderId, Long ownerId);
 
     /**
-     * Hard-deletes a file: removes the object from MinIO and deletes the
-     * metadata row from MySQL. On MinIO failure nothing is deleted (rollback).
+     * Soft-deletes a file by moving it to the trash: the metadata status is set
+     * to {@code DELETED} and the MinIO object is retained so the file can be
+     * restored later.
      *
      * @param id      the internal primary key of the file record
      * @param ownerId the authenticated user's ID
@@ -90,7 +113,7 @@ public interface FileService {
     void deleteFile(Long id, Long ownerId);
 
     /**
-     * Restores a soft-deleted (legacy) file record by setting its status back
+     * Restores a soft-deleted (trashed) file record by setting its status back
      * to {@code ACTIVE}.
      *
      * @param id      the internal primary key of the file record
@@ -100,6 +123,30 @@ public interface FileService {
     FileResponse restoreFile(Long id, Long ownerId);
 
     /**
+     * Retrieves all soft-deleted (trashed) file metadata records for an owner.
+     *
+     * @param ownerId the ID of the file owner
+     * @return a list of lightweight file metadata responses
+     */
+    List<FileMetadataResponse> getTrashFiles(Long ownerId);
+
+    /**
+     * Permanently deletes a trashed file: removes the object from MinIO and
+     * deletes the metadata row from MySQL. On MinIO failure nothing is deleted.
+     *
+     * @param id      the internal primary key of the file record
+     * @param ownerId the authenticated user's ID
+     */
+    void permanentlyDeleteFile(Long id, Long ownerId);
+
+    /**
+     * Permanently deletes every trashed file owned by the user (empty trash).
+     *
+     * @param ownerId the authenticated user's ID
+     */
+    void emptyTrash(Long ownerId);
+
+    /**
      * Streams a file's binary content from MinIO for download.
      *
      * @param id      the internal primary key of the file record
@@ -107,6 +154,19 @@ public interface FileService {
      * @return the streamed content together with its metadata
      */
     FileDownloadResponse downloadFile(Long id, Long ownerId);
+
+    /**
+     * Streams a file's content for a public share download.
+     * <p>
+     * The share token is validated against the Share Service before streaming;
+     * no owner context is required — possession of a valid token for this
+     * resource is the capability.
+     *
+     * @param id    the internal primary key of the file record
+     * @param token the public share token to validate
+     * @return a stream of the file's binary content plus metadata
+     */
+    FileDownloadResponse downloadSharedFile(Long id, String token);
 
     /**
      * Streams a file's binary content from MinIO for in-browser preview.
@@ -145,4 +205,41 @@ public interface FileService {
      * @return a list of matching lightweight file metadata responses
      */
     List<FileMetadataResponse> searchFiles(String query, Long ownerId);
+
+    /**
+     * Streams a ZIP archive of the selected files / folders (hierarchy kept).
+     *
+     * @param request the selected files and folders
+     * @param out     the destination stream
+     * @param ownerId the authenticated user's ID
+     */
+    void downloadZip(DownloadZipRequest request, OutputStream out, Long ownerId);
+
+    /**
+     * Returns the current virus-scan status of a file.
+     *
+     * @param id      the internal primary key of the file record
+     * @param ownerId the authenticated user's ID
+     * @return the scan status response
+     */
+    ScanStatusResponse getScanStatus(Long id, Long ownerId);
+
+    /**
+     * Computes the storage analytics overview for the user.
+     *
+     * @param ownerId the authenticated user's ID
+     * @return the computed overview
+     */
+    StorageOverviewResponse getStorageOverview(Long ownerId);
+
+    /**
+     * Returns a page of the user's audit-trail entries.
+     *
+     * @param ownerId the authenticated user's ID
+     * @param page    zero-based page index
+     * @param size    page size
+     * @param action  optional action filter
+     * @return a paged audit response
+     */
+    PagedAuditLogsResponse getAuditLogs(Long ownerId, int page, int size, String action);
 }

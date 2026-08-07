@@ -1,0 +1,1 @@
+var e=104857600;e/1048576;var t=5*1024**3,n=[{label:`Never expires`,value:null},{label:`1 day`,value:`1`},{label:`7 days`,value:`7`},{label:`30 days`,value:`30`}];export{n,t as r,e as t};

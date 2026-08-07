@@ -17,11 +17,13 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.server.reactive.ServerHttpRequest;
 import org.springframework.http.server.reactive.ServerHttpResponse;
 import org.springframework.web.server.ServerWebExchange;
+import org.mockito.ArgumentCaptor;
 import reactor.core.publisher.Mono;
 import reactor.test.StepVerifier;
 
 import java.net.URI;
 import java.util.Optional;
+import java.util.function.Consumer;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
@@ -86,10 +88,14 @@ class AuthenticationFilterTest {
     @ParameterizedTest(name = "{0} should be allowed without a token")
     @ValueSource(strings = {
             "/api/auth/register",
+            "/api/auth/register/verify",
             "/api/auth/login",
+            "/api/auth/login/verify",
             "/api/auth/refresh",
             "/api/auth/forgot-password",
-            "/api/auth/reset-password"
+            "/api/auth/forgot-password/verify",
+            "/api/auth/forgot-password/reset",
+            "/api/auth/otp/resend"
     })
     @DisplayName("Auth public endpoints are allowed without Authorization header")
     void authPublicEndpoints_allowedWithoutToken(String path) {
@@ -273,7 +279,7 @@ class AuthenticationFilterTest {
     }
 
     @Test
-    @DisplayName("Protected endpoint forwards request with user identity headers when JWT is valid")
+    @DisplayName("Protected endpoint forwards request with JWT-derived identity headers when JWT is valid")
     void protectedEndpoint_withValidToken_forwardsWithUserHeaders() {
         // -- Arrange: request path and headers --
         when(request.getURI()).thenReturn(URI.create("/api/users/me"));
@@ -286,14 +292,16 @@ class AuthenticationFilterTest {
         when(jwtUtil.validateToken("valid-token")).thenReturn(Optional.of(claims));
         when(jwtUtil.getUserId(claims)).thenReturn(Optional.of(1L));
         when(jwtUtil.getEmail(claims)).thenReturn(Optional.of("user@cloudnest.com"));
-        when(jwtUtil.getRole(claims)).thenReturn(Optional.of("USER"));
+        when(jwtUtil.getRole(claims)).thenReturn(Optional.of("ROLE_USER"));
 
         // -- Arrange: request mutation --
         ServerHttpRequest.Builder requestBuilder = mock(ServerHttpRequest.Builder.class);
         when(request.mutate()).thenReturn(requestBuilder);
-        when(requestBuilder.header("X-User-Id", "1")).thenReturn(requestBuilder);
-        when(requestBuilder.header("X-User-Email", "user@cloudnest.com")).thenReturn(requestBuilder);
-        when(requestBuilder.header("X-User-Role", "USER")).thenReturn(requestBuilder);
+
+        // Capture the headers consumer so the actual forwarded values can be asserted.
+        ArgumentCaptor<Consumer<HttpHeaders>> headersConsumer =
+                ArgumentCaptor.forClass(Consumer.class);
+        when(requestBuilder.headers(headersConsumer.capture())).thenReturn(requestBuilder);
 
         ServerHttpRequest mutatedRequest = mock(ServerHttpRequest.class);
         when(requestBuilder.build()).thenReturn(mutatedRequest);
@@ -313,6 +321,57 @@ class AuthenticationFilterTest {
 
         verify(chain).filter(exchange);
         verify(response, never()).setStatusCode(any());
+
+        // -- Assert the forwarded identity headers are derived from the JWT --
+        HttpHeaders forwarded = new HttpHeaders();
+        headersConsumer.getValue().accept(forwarded);
+        assertThat(forwarded.getFirst("X-User-Id")).isEqualTo("1");
+        assertThat(forwarded.getFirst("X-User-Email")).isEqualTo("user@cloudnest.com");
+        assertThat(forwarded.getFirst("X-User-Role")).isEqualTo("ROLE_USER");
+    }
+
+    @Test
+    @DisplayName("Protected endpoint overwrites caller-supplied identity headers with JWT values")
+    void protectedEndpoint_withSpoofedIdentityHeaders_forwardsJwtDerivedValues() {
+        // -- Arrange: request carries spoofed identity headers --
+        when(request.getURI()).thenReturn(URI.create("/api/users/me"));
+
+        HttpHeaders headers = new HttpHeaders();
+        headers.add(HttpHeaders.AUTHORIZATION, "Bearer valid-token");
+        headers.add("X-User-Id", "999");
+        headers.add("X-User-Role", "ROLE_ADMIN");
+        when(request.getHeaders()).thenReturn(headers);
+
+        when(jwtUtil.validateToken("valid-token")).thenReturn(Optional.of(claims));
+        when(jwtUtil.getUserId(claims)).thenReturn(Optional.of(7L));
+        when(jwtUtil.getEmail(claims)).thenReturn(Optional.of("real@cloudnest.com"));
+        when(jwtUtil.getRole(claims)).thenReturn(Optional.of("ROLE_USER"));
+
+        ServerHttpRequest.Builder requestBuilder = mock(ServerHttpRequest.Builder.class);
+        when(request.mutate()).thenReturn(requestBuilder);
+        ArgumentCaptor<Consumer<HttpHeaders>> headersConsumer =
+                ArgumentCaptor.forClass(Consumer.class);
+        when(requestBuilder.headers(headersConsumer.capture())).thenReturn(requestBuilder);
+
+        ServerHttpRequest mutatedRequest = mock(ServerHttpRequest.class);
+        when(requestBuilder.build()).thenReturn(mutatedRequest);
+
+        ServerWebExchange.Builder exchangeBuilder = mock(ServerWebExchange.Builder.class);
+        when(exchange.mutate()).thenReturn(exchangeBuilder);
+        when(exchangeBuilder.request(mutatedRequest)).thenReturn(exchangeBuilder);
+        when(exchangeBuilder.build()).thenReturn(exchange);
+
+        when(chain.filter(exchange)).thenReturn(Mono.empty());
+
+        StepVerifier.create(filter.filter(exchange, chain))
+                .verifyComplete();
+
+        // The downstream service must see the JWT values, never the spoofed ones.
+        HttpHeaders forwarded = new HttpHeaders();
+        headersConsumer.getValue().accept(forwarded);
+        assertThat(forwarded.getFirst("X-User-Id")).isEqualTo("7");
+        assertThat(forwarded.getFirst("X-User-Email")).isEqualTo("real@cloudnest.com");
+        assertThat(forwarded.getFirst("X-User-Role")).isEqualTo("ROLE_USER");
     }
 
     // ══════════════════════════════════════════════════════════════════════════

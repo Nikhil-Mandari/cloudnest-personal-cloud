@@ -51,6 +51,39 @@ public interface FolderService {
     void deleteFolder(UUID folderId, Long ownerId);
 
     /**
+     * Retrieves all soft-deleted (trashed) folders for the authenticated user.
+     *
+     * @param ownerId the authenticated user's UUID
+     * @return a list of trashed folder responses
+     */
+    List<FolderResponse> getTrashFolders(Long ownerId);
+
+    /**
+     * Restores a soft-deleted folder and recursively restores all child folders.
+     *
+     * @param folderId the UUID of the folder to restore
+     * @param ownerId  the authenticated user's UUID
+     * @return the restored folder's response
+     */
+    FolderResponse restoreFolder(UUID folderId, Long ownerId);
+
+    /**
+     * Permanently deletes a soft-deleted folder and recursively deletes all
+     * child folders. This cannot be undone.
+     *
+     * @param folderId the UUID of the folder to delete
+     * @param ownerId  the authenticated user's UUID
+     */
+    void permanentlyDeleteFolder(UUID folderId, Long ownerId);
+
+    /**
+     * Permanently deletes every trashed folder owned by the user (empty trash).
+     *
+     * @param ownerId the authenticated user's UUID
+     */
+    void emptyTrash(Long ownerId);
+
+    /**
      * Moves a folder to a different parent folder.
      * <p>
      * Prevents:

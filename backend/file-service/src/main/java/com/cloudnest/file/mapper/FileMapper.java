@@ -50,7 +50,10 @@ public interface FileMapper {
      * @param entity the file metadata entity
      * @return a populated detailed response
      */
-    @Mapping(target = "status", expression = "java(entity.getStatus().name())")
+    @Mapping(target = "status",
+            expression = "java(entity.getStatus() != null ? entity.getStatus().name() : \"ACTIVE\")")
+    @Mapping(target = "scanStatus",
+            expression = "java(entity.getScanStatus() != null ? entity.getScanStatus().name() : \"CLEAN\")")
     FileResponse toFileResponse(FileMetadata entity);
 
     /**
@@ -59,7 +62,10 @@ public interface FileMapper {
      * @param entity the file metadata entity
      * @return a populated lightweight response
      */
-    @Mapping(target = "status", expression = "java(entity.getStatus().name())")
+    @Mapping(target = "status",
+            expression = "java(entity.getStatus() != null ? entity.getStatus().name() : \"ACTIVE\")")
+    @Mapping(target = "scanStatus",
+            expression = "java(entity.getScanStatus() != null ? entity.getScanStatus().name() : \"CLEAN\")")
     FileMetadataResponse toMetadataResponse(FileMetadata entity);
 
     /**
@@ -84,6 +90,7 @@ public interface FileMapper {
     @Mapping(target = "folderId", ignore = true)
     @Mapping(target = "checksum", ignore = true)
     @Mapping(target = "status", ignore = true)
+    @Mapping(target = "scanStatus", ignore = true)
     @Mapping(target = "uploadedAt", ignore = true)
     @Mapping(target = "createdAt", ignore = true)
     @Mapping(target = "updatedAt", ignore = true)

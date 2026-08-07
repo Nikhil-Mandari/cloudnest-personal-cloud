@@ -16,6 +16,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -158,7 +159,8 @@ public class FolderServiceImpl implements FolderService {
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Soft-deletes a folder and recursively soft-deletes all child folders.
+     * Soft-deletes a folder (moves it to the trash) and recursively soft-deletes
+     * all child folders.
      */
     @Override
     public void deleteFolder(UUID folderId, Long ownerId) {
@@ -170,6 +172,86 @@ public class FolderServiceImpl implements FolderService {
         softDeleteRecursively(folder);
 
         log.info("Folder soft-deleted successfully: id={}, path='{}'", folderId, folder.getPath());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Trash (restore / permanent delete / empty)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Retrieves all soft-deleted (trashed) folders for the authenticated user.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<FolderResponse> getTrashFolders(Long ownerId) {
+        log.debug("Fetching trash folders for ownerId={}", ownerId);
+
+        return folderRepository.findByOwnerIdAndDeletedTrue(ownerId)
+                .stream()
+                .map(folderMapper::toFolderResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Restores a soft-deleted folder and recursively restores all child folders.
+     */
+    @Override
+    public FolderResponse restoreFolder(UUID folderId, Long ownerId) {
+        log.debug("Restoring folder: id={}, ownerId={}", folderId, ownerId);
+
+        Folder folder = findTrashedFolderByIdAndOwner(folderId, ownerId);
+        restoreRecursively(folder);
+
+        log.info("Folder restored successfully: id={}, path='{}'", folderId, folder.getPath());
+
+        return folderMapper.toFolderResponse(folder);
+    }
+
+    /**
+     * Permanently deletes a soft-deleted folder and recursively deletes all
+     * child folders. This cannot be undone.
+     */
+    @Override
+    public void permanentlyDeleteFolder(UUID folderId, Long ownerId) {
+        log.debug("Permanently deleting folder: id={}, ownerId={}", folderId, ownerId);
+
+        Folder folder = findTrashedFolderByIdAndOwner(folderId, ownerId);
+        hardDeleteRecursively(folder);
+
+        log.info("Folder permanently deleted: id={}, path='{}'", folderId, folder.getPath());
+    }
+
+    /**
+     * Permanently deletes every trashed folder owned by the user. Whole
+     * soft-deleted subtrees are removed once (via their top-most deleted
+     * ancestor) so descendant rows are not double-deleted.
+     */
+    @Override
+    public void emptyTrash(Long ownerId) {
+        log.debug("Emptying trash for ownerId={}", ownerId);
+
+        List<Folder> trashFolders = folderRepository.findByOwnerIdAndDeletedTrue(ownerId);
+        Set<UUID> trashedIds = trashFolders.stream()
+                .map(Folder::getId)
+                .collect(Collectors.toSet());
+
+        int deleted = 0;
+        for (Folder folder : trashFolders) {
+            UUID parentId = folder.getParentFolderId();
+            // Skip descendants whose parent is also in the trash — they are
+            // removed when the top-most deleted ancestor is hard-deleted.
+            if (parentId != null && trashedIds.contains(parentId)) {
+                continue;
+            }
+            if (!folderRepository.existsById(folder.getId())) {
+                continue;
+            }
+            hardDeleteRecursively(folder);
+            deleted++;
+        }
+
+        log.info("Trash emptied: {} folder subtree(s) permanently deleted for ownerId={}",
+                deleted, ownerId);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -445,5 +527,63 @@ public class FolderServiceImpl implements FolderService {
         }
 
         return folder;
+    }
+
+    /**
+     * Internal helper to find a soft-deleted (trashed) folder by ID and owner,
+     * or throw an appropriate exception.
+     *
+     * @param id      the folder UUID
+     * @param ownerId the owner's UUID
+     * @return the found trashed Folder entity
+     * @throws FolderNotFoundException            if the folder does not exist or belongs to another user
+     * @throws InvalidFolderOperationException    if the folder is not in the trash
+     */
+    private Folder findTrashedFolderByIdAndOwner(UUID id, Long ownerId) {
+        Folder folder = folderRepository.findById(id)
+                .orElseThrow(() -> {
+                    log.warn("Folder not found: id={}", id);
+                    return new FolderNotFoundException("Folder not found with id: " + id);
+                });
+
+        if (!folder.getDeleted()) {
+            log.warn("Folder is not in the trash: id={}", id);
+            throw new InvalidFolderOperationException(
+                    "Only folders in the trash can be restored or permanently deleted");
+        }
+
+        if (!folder.getOwnerId().equals(ownerId)) {
+            log.warn("Folder {} does not belong to owner {}", id, ownerId);
+            throw new FolderNotFoundException("Folder not found with id: " + id);
+        }
+
+        return folder;
+    }
+
+    /**
+     * Recursively restores a folder and all its descendants by clearing the
+     * {@code deleted} flag.
+     *
+     * @param folder the folder to restore
+     */
+    private void restoreRecursively(Folder folder) {
+        folder.setDeleted(false);
+        folderRepository.save(folder);
+
+        for (Folder child : folderRepository.findByParentFolderId(folder.getId())) {
+            restoreRecursively(child);
+        }
+    }
+
+    /**
+     * Recursively hard-deletes a folder and all its descendants.
+     *
+     * @param folder the folder to delete
+     */
+    private void hardDeleteRecursively(Folder folder) {
+        for (Folder child : folderRepository.findByParentFolderId(folder.getId())) {
+            hardDeleteRecursively(child);
+        }
+        folderRepository.delete(folder);
     }
 }

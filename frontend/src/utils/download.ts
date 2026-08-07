@@ -20,6 +20,21 @@ export async function downloadFileItem(file: FileItem): Promise<void> {
   window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
 }
 
+/**
+ * Saves a Blob to disk with the given file name (object URL + anchor click).
+ * Used by bulk ZIP download and share-link downloads.
+ */
+export function blobDownload(blob: Blob, fileName: string): void {
+  const url = URL.createObjectURL(blob);
+  const anchor = document.createElement('a');
+  anchor.href = url;
+  anchor.download = fileName;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+}
+
 /** Copies text to the clipboard with a legacy fallback. Returns success. */
 export async function copyToClipboard(text: string): Promise<boolean> {
   try {

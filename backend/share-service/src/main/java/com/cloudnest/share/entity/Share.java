@@ -97,6 +97,33 @@ public class Share {
     private LocalDateTime expiryDate;
 
     /**
+     * Optional BCrypt hash of the password protecting this share link.
+     * Null means the link is open (no password required).
+     */
+    @Column(name = "password_hash", length = 100)
+    private String passwordHash;
+
+    /**
+     * Number of times the share link was viewed.
+     */
+    @Column(name = "view_count", nullable = false)
+    @Builder.Default
+    private Long viewCount = 0L;
+
+    /**
+     * Number of times the shared resource was downloaded through this link.
+     */
+    @Column(name = "download_count", nullable = false)
+    @Builder.Default
+    private Long downloadCount = 0L;
+
+    /**
+     * Timestamp of the most recent access to this share.
+     */
+    @Column(name = "last_accessed_at")
+    private LocalDateTime lastAccessedAt;
+
+    /**
      * Timestamp when the share record was created.
      * Managed automatically by JPA auditing.
      */
@@ -116,7 +143,20 @@ public class Share {
      * Enum representing the permission level granted to the share recipient.
      */
     public enum Permission {
+        /**
+         * Read-only access — view and download allowed.
+         */
         VIEW,
+
+        /**
+         * Download-only access — the resource can be downloaded but not
+         * browsed / edited in place.
+         */
+        DOWNLOAD,
+
+        /**
+         * Full edit access — view, download and modify allowed.
+         */
         EDIT
     }
 }

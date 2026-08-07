@@ -5,7 +5,7 @@ import { toast } from 'react-toastify';
 import { APP_ROUTES } from '@/constants/routes';
 import { authService } from '@/services/auth.service';
 import { useAuthStore } from '@/store/authStore';
-import type { LoginFormValues, RegisterFormValues } from '@/types';
+import type { LoginFormValues, RegisterFormValues, VerifyOtpRequest, VerifyOtpState } from '@/types';
 import { getErrorMessage } from '@/utils/error';
 
 export interface LoginMutationVariables extends LoginFormValues {
@@ -13,43 +13,57 @@ export interface LoginMutationVariables extends LoginFormValues {
   from?: string;
 }
 
+export interface VerifyOtpMutationVariables {
+  purpose: VerifyOtpState['purpose'];
+  code: string;
+  email?: string;
+  challengeToken?: string;
+  rememberDevice?: boolean;
+  from?: string;
+  devOtp?: string;
+  resendAfterSeconds?: number;
+  otpExpiryMinutes?: number;
+}
+
 /**
- * Auth mutations for the login / register pages.
+ * Auth mutations for the login / register / OTP-verify pages.
  *
- * - Login: exchanges credentials for a JWT, stores it immediately (so the
- *   Axios interceptor and route guards work), then best-effort hydrates the
- *   user profile from `/auth/me` and redirects.
- * - Register: creates the account and redirects to the login page.
+ * - Login: exchanges credentials for a token pair or an OTP challenge; when
+ *   the backend requires an OTP the user is routed to the verify page.
+ * - Register: creates the (pending) account and routes to the verify page.
+ * - Verify: completes registration or login with the emailed code.
  */
 export function useAuthMutations() {
   const navigate = useNavigate();
-  const setToken = useAuthStore((state) => state.setToken);
-  const setUser = useAuthStore((state) => state.setUser);
+  const setAuthSession = useAuthStore((state) => state.setAuthSession);
   const setStatus = useAuthStore((state) => state.setStatus);
 
   const login = useMutation({
-    mutationFn: async ({ email, password }: LoginMutationVariables) => {
-      const { data } = await authService.login({ email, password });
-      return data.data.token;
+    mutationFn: async ({ email, password, rememberMe }: LoginMutationVariables) => {
+      const payload = { usernameOrEmail: email, password, rememberDevice: rememberMe ?? false };
+      const { data } = await authService.login(payload);
+      return { response: data.data, rememberMe: rememberMe ?? false };
     },
-    onSuccess: async (token, variables) => {
-      setToken(token);
-      setStatus('authenticated');
-      toast.success('Welcome back!');
+    onSuccess: async ({ response, rememberMe }, variables) => {
+      if (response.requiresOtp) {
+        toast.info('Password verified — check your email for the sign-in code.');
+        navigate(APP_ROUTES.verifyOtp, {
+          state: {
+            purpose: 'login',
+            challengeToken: response.challengeToken,
+            email: response.email,
+            rememberDevice: rememberMe,
+            devOtp: response.devOtp,
+            resendAfterSeconds: response.resendAfterSeconds,
+            otpExpiryMinutes: response.otpExpiryMinutes,
+            from: variables.from,
+          } satisfies VerifyOtpState,
+        });
+        return;
+      }
 
-      // Redirect immediately for a snappy UX; hydrate the profile in the
-      // background (the UI already handles `user === null`). Silent + no
-      // auth-redirect: the fetch is best-effort and the token is fresh.
-      navigate(variables.from ?? APP_ROUTES.dashboard, { replace: true });
-
-      try {
-        const { data } = await authService.getMe({ silent: true, skipAuthRedirect: true });
-        // Guard against a logout racing the profile fetch.
-        if (useAuthStore.getState().token === token) {
-          setUser(data.data);
-        }
-      } catch {
-        // Best-effort: the profile will hydrate on the next app load.
+      if (response.token) {
+        applySession(response.token, response.refreshToken, variables.from);
       }
     },
     onError: (error) => {
@@ -59,16 +73,71 @@ export function useAuthMutations() {
 
   const register = useMutation({
     mutationFn: async ({ fullName, email, password }: RegisterFormValues) => {
-      await authService.register({ fullName, email, password });
+      const payload = { username: fullName, email, password };
+      const { data } = await authService.register(payload);
+      return data.data;
     },
-    onSuccess: () => {
-      toast.success('Account created! Please sign in.');
-      navigate(APP_ROUTES.login);
+    onSuccess: (response) => {
+      toast.success('Account created! Check your email for the activation code.');
+      navigate(APP_ROUTES.verifyOtp, {
+        state: {
+          purpose: 'registration',
+          email: response.email,
+          devOtp: response.devOtp,
+          resendAfterSeconds: response.resendAfterSeconds,
+          otpExpiryMinutes: response.otpExpiryMinutes,
+        } satisfies VerifyOtpState,
+      });
     },
     onError: (error) => {
       toast.error(getErrorMessage(error, 'Registration failed. Please try again.'));
     },
   });
 
-  return { loginMutation: login, registerMutation: register };
+  const verifyOtp = useMutation({
+    mutationFn: async ({ purpose, code, email, challengeToken, rememberDevice }: VerifyOtpMutationVariables) => {
+      const payload: VerifyOtpRequest = { email, challengeToken, code };
+      if (purpose === 'registration') {
+        const { data } = await authService.verifyRegistration(payload, rememberDevice ?? false);
+        return data.data;
+      }
+      const { data } = await authService.verifyLogin(payload, rememberDevice ?? false);
+      return data.data;
+    },
+    onSuccess: (auth, variables) => {
+      toast.success('Welcome to CloudNest!');
+      applySession(auth.token, auth.refreshToken, variables.from);
+    },
+    onError: (error) => {
+      toast.error(getErrorMessage(error, 'That code didn\'t work. Please try again.'));
+    },
+  });
+
+  const resendOtp = useMutation({
+    mutationFn: ({ email, challengeToken }: Pick<VerifyOtpMutationVariables, 'email' | 'challengeToken'>) =>
+      authService.resendOtp({ email, challengeToken }),
+  });
+
+  function applySession(token: string, refreshToken: string | undefined, from?: string) {
+    setAuthSession(token, refreshToken ?? null, null);
+    setStatus('authenticated');
+
+    // Redirect immediately for a snappy UX; hydrate the profile in the
+    // background (the UI already handles `user === null`).
+    navigate(from ?? APP_ROUTES.dashboard, { replace: true });
+
+    void authService
+      .getMe({ silent: true, skipAuthRedirect: true })
+      .then(({ data }) => {
+        // Guard against a logout racing the profile fetch.
+        if (useAuthStore.getState().token === token) {
+          useAuthStore.getState().setUser(data.data);
+        }
+      })
+      .catch(() => {
+        // Best-effort: the profile will hydrate on the next app load.
+      });
+  }
+
+  return { loginMutation: login, registerMutation: register, verifyOtpMutation: verifyOtp, resendOtpMutation: resendOtp };
 }

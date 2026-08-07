@@ -9,6 +9,31 @@
 
 export type FileStatus = 'ACTIVE' | 'DELETED';
 
+/** Virus-scan lifecycle of a file's content. */
+export type ScanStatus = 'PENDING' | 'SCANNING' | 'CLEAN' | 'INFECTED' | 'ERROR';
+
+/** How the server should handle a duplicate-content upload. */
+export type DuplicateAction = 'ASK' | 'KEEP_BOTH' | 'SKIP' | 'REPLACE';
+
+/** An existing file with identical content (SHA-256), returned on duplicates. */
+export interface DuplicateFileInfo {
+  id: number;
+  fileId: string;
+  originalFileName: string;
+  fileSize: number;
+  checksum?: string;
+  folderId?: string | null;
+  uploadedAt?: string;
+}
+
+/** Upload response with duplicate detection. */
+export interface UploadResult {
+  duplicate: boolean;
+  actionTaken: DuplicateAction;
+  file?: FileDetail | null;
+  duplicateOf?: DuplicateFileInfo | null;
+}
+
 export interface FileItem {
   /** Internal numeric primary key — used by all mutation endpoints. */
   id: number;
@@ -30,6 +55,8 @@ export interface FileItem {
   isFavorite: boolean;
   /** Lifecycle status. */
   status: FileStatus;
+  /** Virus-scan status of the file's content. */
+  scanStatus?: ScanStatus;
   /** Timestamp when the record was created (upload date). */
   createdAt: string;
   /** Timestamp when the record was last updated. */
@@ -60,6 +87,8 @@ export interface FileDetail {
   isFavorite: boolean;
   checksum?: string;
   status: FileStatus;
+  /** Virus-scan status of the file's content. */
+  scanStatus?: ScanStatus;
   /** Timestamp when the file content was uploaded. */
   uploadedAt: string;
   createdAt: string;

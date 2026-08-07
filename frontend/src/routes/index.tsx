@@ -6,21 +6,37 @@ import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { GuestRoute } from './GuestRoute';
 import {
+  AboutPage,
+  AdminPage,
+  AnalyticsPage,
+  AuditLogsPage,
   DashboardPage,
   FilesPage,
   FoldersPage,
+  ForgotPasswordPage,
   LoginPage,
+  MySharesPage,
   NotificationsPage,
   ProfilePage,
+  PublicSharePage,
   RegisterPage,
+  SecurityPage,
   SettingsPage,
   SharedPage,
   TrashPage,
+  VerifyOtpPage,
 } from './pages';
+import { AdminRoute } from './AdminRoute';
 import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
   { path: APP_ROUTES.home, element: <Navigate to={APP_ROUTES.dashboard} replace /> },
+
+  {
+    // Public share-link browse page — open to everyone, no auth.
+    path: APP_ROUTES.publicShare(':token'),
+    element: <PublicSharePage />,
+  },
 
   {
     // Public auth pages — redirect to /dashboard when already signed in.
@@ -31,6 +47,8 @@ export const router = createBrowserRouter([
         children: [
           { path: APP_ROUTES.login, element: <LoginPage /> },
           { path: APP_ROUTES.register, element: <RegisterPage /> },
+          { path: APP_ROUTES.verifyOtp, element: <VerifyOtpPage /> },
+          { path: APP_ROUTES.forgotPassword, element: <ForgotPasswordPage /> },
         ],
       },
     ],
@@ -47,10 +65,25 @@ export const router = createBrowserRouter([
           { path: APP_ROUTES.files, element: <FilesPage /> },
           { path: APP_ROUTES.folders, element: <FoldersPage /> },
           { path: APP_ROUTES.shared, element: <SharedPage /> },
+          { path: APP_ROUTES.myShares, element: <MySharesPage /> },
           { path: APP_ROUTES.trash, element: <TrashPage /> },
+          { path: APP_ROUTES.analytics, element: <AnalyticsPage /> },
+          { path: APP_ROUTES.auditLogs, element: <AuditLogsPage /> },
           { path: APP_ROUTES.profile, element: <ProfilePage /> },
           { path: APP_ROUTES.settings, element: <SettingsPage /> },
+          { path: APP_ROUTES.security, element: <SecurityPage /> },
+          { path: APP_ROUTES.about, element: <AboutPage /> },
           { path: APP_ROUTES.notifications, element: <NotificationsPage /> },
+        ],
+      },
+      {
+        // Admin dashboard — requires ROLE_ADMIN.
+        element: <AdminRoute />,
+        children: [
+          {
+            element: <DashboardLayout />,
+            children: [{ path: APP_ROUTES.admin, element: <AdminPage /> }],
+          },
         ],
       },
     ],

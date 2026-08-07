@@ -16,42 +16,72 @@ import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.time.Instant;
 import java.util.Base64;
 import java.util.Date;
 import java.util.Optional;
+import java.util.UUID;
 
 /**
- * Provider for JWT token generation and validation.
+ * Provider for JWT access, refresh and OTP-challenge token generation and
+ * validation.
  * <p>
- * Reads {@code jwt.secret} and {@code jwt.expiration-ms} from the
- * centralized configuration (Config Server). The secret supports both
- * Base64-encoded and plain-text formats for flexibility.
+ * Reads {@code jwt.secret}, {@code jwt.expiration-ms} (access tokens) and
+ * {@code auth.token.*} (refresh / challenge lifetimes) from the centralized
+ * configuration (Config Server). The secret supports both Base64-encoded and
+ * plain-text formats for flexibility.
+ * <p>
+ * Access tokens carry a {@code sid} (session id) and {@code jti} claim so
+ * sessions can be ended and refresh tokens rotated/revoked independently.
  */
 @Slf4j
 @Component
 public class JwtProvider {
 
+    /** Claim holding the session id. */
+    public static final String CLAIM_SESSION_ID = "sid";
+
+    /** Claim holding the unique token id. */
+    public static final String CLAIM_TOKEN_ID = "jti";
+
+    /** Claim holding the token type (ACCESS / REFRESH / CHALLENGE). */
+    public static final String CLAIM_TYPE = "type";
+
+    /** Claim holding the OTP challenge purpose. */
+    public static final String CLAIM_PURPOSE = "purpose";
+
     private final SecretKey signingKey;
     private final long expirationMs;
+    private final long refreshExpirationMs;
+    private final long challengeExpirationMs;
 
     public JwtProvider(
             @Value("${jwt.secret}") String secret,
-            @Value("${jwt.expiration-ms}") long expirationMs) {
+            @Value("${jwt.expiration-ms}") long expirationMs,
+            @Value("${auth.token.refresh-expiration-days:30}") int refreshExpirationDays,
+            @Value("${auth.token.challenge-expiration-minutes:10}") int challengeExpirationMinutes) {
         this.signingKey = new SecretKeySpec(decodeSecret(secret), "HmacSHA256");
         this.expirationMs = expirationMs;
-        log.info("JwtProvider initialized with expiration-ms={}", expirationMs);
+        this.refreshExpirationMs = refreshExpirationDays * 24L * 60L * 60L * 1000L;
+        this.challengeExpirationMs = challengeExpirationMinutes * 60L * 1000L;
+        log.info("JwtProvider initialized — access={}ms, refresh={}ms, challenge={}ms",
+                expirationMs, this.refreshExpirationMs, this.challengeExpirationMs);
     }
 
     /**
-     * Generates a JWT for the given user details.
-     *
-     * @param userId   the user's unique identifier
-     * @param username the user's username
-     * @param email    the user's email address
-     * @param role     the user's role (e.g. {@code ROLE_USER})
-     * @return a signed JWT string
+     * Generates an access token for the given user (backward-compatible
+     * signature — no session binding).
      */
     public String generateToken(Long userId, String username, String email, String role) {
+        return generateToken(userId, username, email, role, null);
+    }
+
+    /**
+     * Generates an access token bound to a session.
+     *
+     * @param sessionId the session id (may be {@code null} for legacy calls)
+     */
+    public String generateToken(Long userId, String username, String email, String role, String sessionId) {
         Date now = new Date();
         Date expiry = new Date(now.getTime() + expirationMs);
 
@@ -61,10 +91,84 @@ public class JwtProvider {
                 .claim("username", username)
                 .claim("email", email)
                 .claim("role", role)
+                .claim(CLAIM_TOKEN_ID, UUID.randomUUID().toString())
+                .claim(CLAIM_TYPE, "ACCESS")
+                .claim(CLAIM_SESSION_ID, sessionId)
                 .issuedAt(now)
                 .expiration(expiry)
                 .signWith(signingKey)
                 .compact();
+    }
+
+    /**
+     * Generates a rotating refresh token bound to a session.
+     *
+     * @return the raw refresh token (only the SHA-256 hash may be persisted)
+     */
+    public String generateRefreshToken(Long userId, String sessionId) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + refreshExpirationMs);
+
+        return Jwts.builder()
+                .subject(userId.toString())
+                .claim("userId", userId)
+                .claim(CLAIM_TOKEN_ID, UUID.randomUUID().toString())
+                .claim(CLAIM_TYPE, "REFRESH")
+                .claim(CLAIM_SESSION_ID, sessionId)
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(signingKey)
+                .compact();
+    }
+
+    /**
+     * Generates a short-lived OTP challenge token used to carry the pending
+     * login/registration/reset through the OTP verification step.
+     */
+    public String generateChallengeToken(Long userId, String purpose) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + challengeExpirationMs);
+
+        return Jwts.builder()
+                .subject(userId.toString())
+                .claim("userId", userId)
+                .claim(CLAIM_TOKEN_ID, UUID.randomUUID().toString())
+                .claim(CLAIM_TYPE, "CHALLENGE")
+                .claim(CLAIM_PURPOSE, purpose)
+                .issuedAt(now)
+                .expiration(expiry)
+                .signWith(signingKey)
+                .compact();
+    }
+
+    // -- Claims helpers -----------------------------------------------------
+
+    /**
+     * Extracts the {@code jti} claim (token id) from validated claims.
+     */
+    public String extractTokenId(Claims claims) {
+        return claims.get(CLAIM_TOKEN_ID, String.class);
+    }
+
+    /**
+     * Extracts the {@code sid} claim (session id) from validated claims.
+     */
+    public String extractSessionId(Claims claims) {
+        return claims.get(CLAIM_SESSION_ID, String.class);
+    }
+
+    /**
+     * Extracts the token {@code type} claim (ACCESS / REFRESH / CHALLENGE).
+     */
+    public String extractType(Claims claims) {
+        return claims.get(CLAIM_TYPE, String.class);
+    }
+
+    /**
+     * Returns the expiry instant of validated claims.
+     */
+    public Instant extractExpiry(Claims claims) {
+        return claims.getExpiration().toInstant();
     }
 
     /**

@@ -1,5 +1,4 @@
-import { API_BASE_URL } from '@/constants/app';
-import { API_ENDPOINTS } from '@/constants/apiEndpoints';
+import { APP_ROUTES } from '@/constants/routes';
 import type {
   FileDetail,
   FileItem,
@@ -22,6 +21,42 @@ export function getFileExtension(fileName: string): string {
   }
   return fileName.slice(dot + 1).toLowerCase();
 }
+
+/** Whether the file is a raster/vector image (by extension). */
+export function isImageFileName(fileName: string): boolean {
+  return EXTENSION_CATEGORIES.image.includes(getFileExtension(fileName));
+}
+
+/** Whether the file is a video (by extension). */
+export function isVideoFileName(fileName: string): boolean {
+  return EXTENSION_CATEGORIES.video.includes(getFileExtension(fileName));
+}
+
+/** Whether the file is a PDF. */
+export function isPdfFile(file: Pick<FileItem, 'fileType' | 'originalFileName'>): boolean {
+  const mime = (file.fileType ?? '').toLowerCase();
+  return mime.includes('pdf') || getFileExtension(file.originalFileName) === 'pdf';
+}
+
+/**
+ * Whether a user's `avatarUrl` references a CloudNest file (numeric id)
+ * rather than a plain external URL. Uploaded avatars are stored through the
+ * file-service and the file's numeric id is kept in `User.avatarUrl`.
+ */
+export function isAvatarFileId(avatarUrl: string | null | undefined): avatarUrl is string {
+  return typeof avatarUrl === 'string' && /^\d+$/.test(avatarUrl);
+}
+
+/** Whether a file was created/uploaded within the last `withinDays` days. */
+export function isRecentFile(iso: string, withinDays = 7): boolean {
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) {
+    return false;
+  }
+  return time <= Date.now() && Date.now() - time < withinDays * 86_400_000;
+}
+
+/** Returns the lowercase extension of a file name (without the dot). */
 
 /** Splits "report.final.pdf" into `{ base: "report.final", ext: "pdf" }`. */
 export function splitFileName(fileName: string): { base: string; ext: string } {
@@ -119,6 +154,15 @@ export function getFileTypeCategory(
   return match?.[0] ?? 'other';
 }
 
+/** Whether a file was uploaded within the last `withinHours` hours. */
+export function isRecentlyUploaded(iso: string, withinHours = 24): boolean {
+  const time = new Date(iso).getTime();
+  if (Number.isNaN(time)) {
+    return false;
+  }
+  return time <= Date.now() && Date.now() - time < withinHours * 3_600_000;
+}
+
 /** Formats an ISO timestamp as a friendly, human-relative date. */
 export function formatFileDate(iso: string): string {
   const date = new Date(iso);
@@ -167,11 +211,12 @@ export function sortFiles(files: FileItem[], key: SortKey, direction: SortDirect
   });
 }
 
-/** Applies the search query and type/favorites filter. */
+/** Applies the search query and the active filter. */
 export function filterFiles(
   files: FileItem[],
   searchQuery: string,
   filter: FileTypeFilter,
+  sharedFileIds?: ReadonlySet<number>,
 ): FileItem[] {
   const query = searchQuery.trim().toLowerCase();
 
@@ -179,13 +224,20 @@ export function filterFiles(
     if (query && !file.originalFileName.toLowerCase().includes(query)) {
       return false;
     }
-    if (filter === 'all') {
-      return true;
+    switch (filter) {
+      case 'all':
+        return true;
+      case 'favorites':
+        return file.isFavorite;
+      case 'pdf':
+        return isPdfFile(file);
+      case 'recent':
+        return isRecentFile(file.createdAt);
+      case 'shared':
+        return sharedFileIds ? sharedFileIds.has(file.id) : false;
+      default:
+        return getFileTypeCategory(file) === filter;
     }
-    if (filter === 'favorites') {
-      return file.isFavorite;
-    }
-    return getFileTypeCategory(file) === filter;
   });
 }
 
@@ -210,7 +262,22 @@ export function mapFileResponseToItem(response: FileDetail): FileItem {
   };
 }
 
-/** Public, unauthenticated access URL for a share token. */
+/**
+ * Public, unauthenticated access URL for a share token.
+ *
+ * Points at the CloudNest share-link browse page (Phase 3). The page itself
+ * fetches the share metadata through the API's public endpoint.
+ */
 export function buildShareUrl(token: string): string {
-  return `${API_BASE_URL}${API_ENDPOINTS.share.public(token)}`;
+  return `${window.location.origin}${APP_ROUTES.publicShare(token)}`;
+}
+
+/**
+ * Whether a shared resource is an image (by name extension) — used by the
+ * public share page to offer an in-browser preview.
+ */
+export function isShareableImageName(fileName: string | null | undefined): boolean {
+  return Boolean(
+    fileName && EXTENSION_CATEGORIES.image.includes(getFileExtension(fileName)),
+  );
 }

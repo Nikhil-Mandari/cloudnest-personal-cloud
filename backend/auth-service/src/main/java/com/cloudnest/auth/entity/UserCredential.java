@@ -2,6 +2,8 @@ package com.cloudnest.auth.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
+import jakarta.persistence.EnumType;
+import jakarta.persistence.Enumerated;
 import jakarta.persistence.GeneratedValue;
 import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
@@ -52,6 +54,40 @@ public class UserCredential {
     @Builder.Default
     private Boolean enabled = true;
 
+    /**
+     * Account lifecycle status.
+     * <ul>
+     *   <li>{@code PENDING_VERIFICATION} — registered, awaiting email OTP</li>
+     *   <li>{@code ACTIVE} — email verified, can sign in</li>
+     *   <li>{@code LOCKED} — temporarily locked after repeated failed logins</li>
+     * </ul>
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "status", nullable = false, length = 25)
+    @Builder.Default
+    private AccountStatus status = AccountStatus.PENDING_VERIFICATION;
+
+    /** Consecutive failed password attempts since the last success/unlock. */
+    @Column(name = "failed_attempts", nullable = false)
+    @Builder.Default
+    private Integer failedAttempts = 0;
+
+    /** When the account lock expires ({@code null} = not locked). */
+    @Column(name = "locked_until")
+    private LocalDateTime lockedUntil;
+
+    /** When the email address was verified via OTP ({@code null} = not verified). */
+    @Column(name = "email_verified_at")
+    private LocalDateTime emailVerifiedAt;
+
+    /** Timestamp of the last successful login. */
+    @Column(name = "last_login_at")
+    private LocalDateTime lastLoginAt;
+
+    /** Timestamp of the last password change/reset. */
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
@@ -67,5 +103,14 @@ public class UserCredential {
     @PreUpdate
     protected void onUpdate() {
         this.updatedAt = LocalDateTime.now();
+    }
+
+    /**
+     * Account lifecycle status enum.
+     */
+    public enum AccountStatus {
+        PENDING_VERIFICATION,
+        ACTIVE,
+        LOCKED
     }
 }

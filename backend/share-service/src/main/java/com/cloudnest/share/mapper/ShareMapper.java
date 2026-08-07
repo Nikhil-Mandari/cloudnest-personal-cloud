@@ -19,5 +19,7 @@ public interface ShareMapper {
      */
     @Mapping(target = "resourceType", source = "resourceType")
     @Mapping(target = "permission", source = "permission")
+    @Mapping(target = "hasPassword",
+            expression = "java(share.getPasswordHash() != null && !share.getPasswordHash().isBlank())")
     ShareResponse toShareResponse(Share share);
 }

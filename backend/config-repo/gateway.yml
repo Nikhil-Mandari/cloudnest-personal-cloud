@@ -10,6 +10,13 @@ spring:
       default-filters:
         - DedupeResponseHeader=Access-Control-Allow-Origin
 
+  # ── Request body buffering ──────────────────────────────
+  # Without raising the default (256 KB) codec limit, multipart file uploads
+  # larger than 256 KB fail with DataBufferLimitException → HTTP 500 before
+  # ever reaching the file-service.
+  codec:
+    max-in-memory-size: ${GATEWAY_MAX_IN_MEMORY_SIZE:100MB}
+
 eureka:
   instance:
     # Register with the container IP (required for Docker: hostname is an unresolvable container ID)

@@ -70,6 +70,9 @@ public class FileResponse {
     @Schema(description = "Lifecycle status (ACTIVE / DELETED)", example = "ACTIVE")
     private String status;
 
+    @Schema(description = "Virus scan status (PENDING / SCANNING / CLEAN / INFECTED / ERROR)", example = "CLEAN")
+    private String scanStatus;
+
     @Schema(description = "Timestamp when the file was uploaded", example = "2026-08-03T10:15:30")
     private LocalDateTime uploadedAt;
 

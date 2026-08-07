@@ -79,16 +79,15 @@ services:
   # ── 3. Central Configuration ────────────────────────────────
   config-server:
     build:
-      context: ./backend/config-server
-      dockerfile: Dockerfile
+      # Context is `backend/` so the Dockerfile can bake in config-repo/.
+      context: ./backend
+      dockerfile: config-server/Dockerfile
     image: cloudnest/config-server:latest
     container_name: cloudnest-config-server
     restart: unless-stopped
     environment:
       EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
       CONFIG_REPO_LOCATION: /app/config-repo
-    volumes:
-      - ./backend/config-repo:/app/config-repo:ro
     ports:
       - "8888:8888"
     networks:

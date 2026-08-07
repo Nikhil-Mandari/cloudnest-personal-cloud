@@ -11,26 +11,27 @@ spring:
     password: ${FILE_DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
-# ── MinIO Object Storage Configuration ──────────────────────
-# Binary file content lives in MinIO; metadata lives in MySQL.
-# Credentials are supplied via environment variables (see docker-compose.yml).
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
 minio:
   endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
   access-key: ${MINIO_ACCESS_KEY:minioadmin}
   secret-key: ${MINIO_SECRET_KEY:minioadmin}
   bucket-name: ${MINIO_BUCKET_NAME:cloudnest-files}
   secure: ${MINIO_SECURE:false}
-  max-file-size: ${MINIO_MAX_FILE_SIZE:104857600}  # 100 MB
+  max-file-size: ${MINIO_MAX_FILE_SIZE:104857600}
 
-spring:
-  servlet:
-    multipart:
-      max-file-size: 100MB
-      max-request-size: 100MB
+virus-scanner:
+  provider: ${VIRUS_SCANNER_PROVIDER:noop}   # noop | clamav
+  clamd-host: ${CLAMD_HOST:localhost}
+  clamd-port: ${CLAMD_PORT:3310}
+  timeout-ms: ${CLAMD_TIMEOUT_MS:30000}
 
 eureka:
   instance:
-    # Register with the container IP (required for Docker: hostname is an unresolvable container ID)
     prefer-ip-address: true
   client:
     service-url:

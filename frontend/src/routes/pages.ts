@@ -10,6 +10,12 @@ export const LoginPage = lazy(() =>
 export const RegisterPage = lazy(() =>
   import('@/pages/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })),
 );
+export const VerifyOtpPage = lazy(() =>
+  import('@/pages/auth/VerifyOtpPage').then((m) => ({ default: m.VerifyOtpPage })),
+);
+export const ForgotPasswordPage = lazy(() =>
+  import('@/pages/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
+);
 export const DashboardPage = lazy(() =>
   import('@/pages/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 );
@@ -22,8 +28,20 @@ export const FoldersPage = lazy(() =>
 export const SharedPage = lazy(() =>
   import('@/pages/share/SharedPage').then((m) => ({ default: m.SharedPage })),
 );
+export const MySharesPage = lazy(() =>
+  import('@/pages/share/MySharesPage').then((m) => ({ default: m.MySharesPage })),
+);
+export const PublicSharePage = lazy(() =>
+  import('@/pages/share/PublicSharePage').then((m) => ({ default: m.PublicSharePage })),
+);
 export const TrashPage = lazy(() =>
   import('@/pages/trash/TrashPage').then((m) => ({ default: m.TrashPage })),
+);
+export const AnalyticsPage = lazy(() =>
+  import('@/pages/analytics/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })),
+);
+export const AuditLogsPage = lazy(() =>
+  import('@/pages/audit/AuditLogsPage').then((m) => ({ default: m.AuditLogsPage })),
 );
 export const ProfilePage = lazy(() =>
   import('@/pages/profile/ProfilePage').then((m) => ({ default: m.ProfilePage })),
@@ -33,4 +51,13 @@ export const SettingsPage = lazy(() =>
 );
 export const NotificationsPage = lazy(() =>
   import('@/pages/notifications/NotificationsPage').then((m) => ({ default: m.NotificationsPage })),
+);
+export const SecurityPage = lazy(() =>
+  import('@/pages/security/SecurityPage').then((m) => ({ default: m.SecurityPage })),
+);
+export const AboutPage = lazy(() =>
+  import('@/pages/about/AboutPage').then((m) => ({ default: m.AboutPage })),
+);
+export const AdminPage = lazy(() =>
+  import('@/pages/admin/AdminPage').then((m) => ({ default: m.AdminPage })),
 );

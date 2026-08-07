@@ -23,7 +23,11 @@
         try {
           var stored = JSON.parse(localStorage.getItem('cloudnest-theme') || 'null');
           var theme = stored && stored.state && stored.state.theme ? stored.state.theme : 'light';
-          if (theme === 'dark') {
+          var dark =
+            theme === 'dark' ||
+            (theme === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches);
+          if (dark) {
             document.documentElement.classList.add('dark');
           }
         } catch (e) {

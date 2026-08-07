@@ -18,7 +18,10 @@ jwt:
 spring:
   jpa:
     hibernate:
-      ddl-auto: update
+      # validate: schema drift (e.g. a column missing from the table) fails
+      # loudly at startup instead of surfacing as silent runtime 500s.
+      # New environments need schema/migration scripts — see /database.
+      ddl-auto: validate
     show-sql: false
     properties:
       hibernate:

@@ -5,6 +5,7 @@ import { Upload } from 'lucide-react';
 import { Button } from '@/components/ui/Button';
 import { Modal } from '@/components/ui/Modal';
 import { useFileUpload } from '@/hooks/useFileUpload';
+import { DuplicateDialog } from './DuplicateDialog';
 import { UploadDropzone } from './UploadDropzone';
 import { UploadProgress } from './UploadProgress';
 
@@ -14,6 +15,8 @@ export interface UploadModalProps {
   /** Files dropped directly onto the page — queued automatically on open. */
   initialFiles?: File[];
   onInitialFilesConsumed?: () => void;
+  /** Called with the ids of uploaded files just before the dialog closes. */
+  onUploadComplete?: (fileIds: number[]) => void;
   folderId?: string | null;
 }
 
@@ -23,10 +26,23 @@ export function UploadModal({
   onClose,
   initialFiles = [],
   onInitialFilesConsumed,
+  onUploadComplete,
   folderId,
 }: UploadModalProps) {
-  const { tasks, addFiles, start, removeTask, cancelTask, retryTask, clearFinished } =
-    useFileUpload({ folderId });
+  const {
+    tasks,
+    duplicatePrompt,
+    addFiles,
+    start,
+    removeTask,
+    cancelTask,
+    pauseTask,
+    resumeTask,
+    retryTask,
+    clearFinished,
+    resolveDuplicate,
+    dismissDuplicate,
+  } = useFileUpload({ folderId });
 
   // Queue files dropped on the page the first time the modal opens with them.
   const consumedRef = useRef(false);
@@ -45,6 +61,36 @@ export function UploadModal({
   const pendingCount = tasks.filter(
     (task) => task.status === 'queued' || task.status === 'uploading',
   ).length;
+
+  // Once every task finishes, auto-close the dialog, surface the uploaded ids
+  // and clear the queue so the next open starts fresh. A fully-failed batch
+  // stays open so the user can retry.
+  const allFinished =
+    tasks.length > 0 &&
+    tasks.some((task) => task.status === 'done') &&
+    tasks.every((task) => task.status === 'done' || task.status === 'error');
+  const autoClosedRef = useRef(false);
+
+  useEffect(() => {
+    if (!open) {
+      autoClosedRef.current = false;
+      return;
+    }
+    if (!allFinished || autoClosedRef.current) {
+      return;
+    }
+    autoClosedRef.current = true;
+    const doneIds = tasks
+      .filter((task) => task.status === 'done' && task.serverId !== undefined)
+      .map((task) => task.serverId as number);
+    const timer = window.setTimeout(() => {
+      onUploadComplete?.(doneIds);
+      clearFinished();
+      onClose();
+    }, 900);
+    return () => window.clearTimeout(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allFinished, open]);
 
   return (
     <Modal
@@ -83,6 +129,8 @@ export function UploadModal({
                     onCancel={cancelTask}
                     onRemove={removeTask}
                     onRetry={retryTask}
+                    onPause={pauseTask}
+                    onResume={resumeTask}
                   />
                 ))}
               </AnimatePresence>
@@ -104,6 +152,15 @@ export function UploadModal({
           </Button>
         </div>
       </div>
+
+      {/* Duplicate-content resolution prompt */}
+      <DuplicateDialog
+        open={duplicatePrompt !== null}
+        fileName={duplicatePrompt?.fileName ?? ''}
+        duplicateOf={duplicatePrompt?.duplicateOf ?? { id: 0, fileId: '', originalFileName: '', fileSize: 0 }}
+        onResolve={resolveDuplicate}
+        onDismiss={dismissDuplicate}
+      />
     </Modal>
   );
 }

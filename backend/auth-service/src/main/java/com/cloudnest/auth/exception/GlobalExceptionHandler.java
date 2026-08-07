@@ -74,6 +74,87 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles OTP verification failures (invalid, expired, max attempts,
+     * resend cooldown).
+     */
+    @ExceptionHandler(OtpException.class)
+    public ResponseEntity<ErrorResponse> handleOtpException(
+            OtpException ex, HttpServletRequest request) {
+
+        return buildError(ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+    }
+
+    /**
+     * Handles sign-in on a temporarily locked account (423 Locked).
+     */
+    @ExceptionHandler(AccountLockedException.class)
+    public ResponseEntity<ErrorResponse> handleAccountLocked(
+            AccountLockedException ex, HttpServletRequest request) {
+
+        return buildError(ex.getMessage(), HttpStatus.LOCKED, request);
+    }
+
+    /**
+     * Handles sign-in attempts on an unverified account (403).
+     */
+    @ExceptionHandler(EmailNotVerifiedException.class)
+    public ResponseEntity<ErrorResponse> handleEmailNotVerified(
+            EmailNotVerifiedException ex, HttpServletRequest request) {
+
+        return buildError(ex.getMessage(), HttpStatus.FORBIDDEN, request);
+    }
+
+    /**
+     * Handles sign-in attempts on a disabled account (403).
+     */
+    @ExceptionHandler(AccountDisabledException.class)
+    public ResponseEntity<ErrorResponse> handleAccountDisabled(
+            AccountDisabledException ex, HttpServletRequest request) {
+
+        return buildError(ex.getMessage(), HttpStatus.FORBIDDEN, request);
+    }
+
+    /**
+     * Handles non-admin callers on admin-only endpoints (403).
+     */
+    @ExceptionHandler(AdminAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAdminAccessDenied(
+            AdminAccessDeniedException ex, HttpServletRequest request) {
+
+        return buildError(ex.getMessage(), HttpStatus.FORBIDDEN, request);
+    }
+
+    /**
+     * Handles invalid / revoked / expired refresh tokens (401).
+     */
+    @ExceptionHandler(InvalidRefreshTokenException.class)
+    public ResponseEntity<ErrorResponse> handleInvalidRefreshToken(
+            InvalidRefreshTokenException ex, HttpServletRequest request) {
+
+        return buildError(ex.getMessage(), HttpStatus.UNAUTHORIZED, request);
+    }
+
+    /**
+     * Handles unknown sessions (404).
+     */
+    @ExceptionHandler(SessionNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleSessionNotFound(
+            SessionNotFoundException ex, HttpServletRequest request) {
+
+        return buildError(ex.getMessage(), HttpStatus.NOT_FOUND, request);
+    }
+
+    /**
+     * Handles unknown trusted devices (404).
+     */
+    @ExceptionHandler(TrustedDeviceNotFoundException.class)
+    public ResponseEntity<ErrorResponse> handleTrustedDeviceNotFound(
+            TrustedDeviceNotFoundException ex, HttpServletRequest request) {
+
+        return buildError(ex.getMessage(), HttpStatus.NOT_FOUND, request);
+    }
+
+    /**
      * Handles invalid credentials (wrong password during login).
      */
     @ExceptionHandler(BadCredentialsException.class)
@@ -118,16 +199,21 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIllegalArgument(
             IllegalArgumentException ex, HttpServletRequest request) {
 
+        return buildError(ex.getMessage(), HttpStatus.BAD_REQUEST, request);
+    }
+
+    // -- Private helpers -----------------------------------------------------
+
+    private ResponseEntity<ErrorResponse> buildError(String message, HttpStatus status, HttpServletRequest request) {
         ErrorResponse response = ErrorResponse.builder()
                 .success(false)
-                .message(ex.getMessage())
-                .status(HttpStatus.BAD_REQUEST.value())
-                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .message(message)
+                .status(status.value())
+                .error(status.getReasonPhrase())
                 .path(request.getRequestURI())
                 .timestamp(Instant.now())
                 .build();
-
-        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+        return ResponseEntity.status(status).body(response);
     }
 
     /**

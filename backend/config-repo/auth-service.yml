@@ -26,3 +26,43 @@ management:
     web:
       exposure:
         include: health,info
+
+# ── Enterprise Authentication ────────────────────────────────
+# OTP / account-lock / token lifecycle tuning. All values can be
+# overridden per environment via environment variables.
+auth:
+  otp:
+    length: ${AUTH_OTP_LENGTH:6}
+    expiry-minutes: ${AUTH_OTP_EXPIRY_MINUTES:5}
+    resend-cooldown-seconds: ${AUTH_OTP_RESEND_COOLDOWN_SECONDS:60}
+    max-attempts: ${AUTH_OTP_MAX_ATTEMPTS:5}
+    pepper: ${AUTH_OTP_PEPPER:cloudnest-dev-otp-pepper}
+  lock:
+    max-failed-attempts: ${AUTH_LOCK_MAX_FAILED_ATTEMPTS:5}
+    duration-minutes: ${AUTH_LOCK_DURATION_MINUTES:15}
+  token:
+    refresh-expiration-days: ${AUTH_REFRESH_EXPIRATION_DAYS:30}
+    challenge-expiration-minutes: ${AUTH_CHALLENGE_EXPIRATION_MINUTES:10}
+  security:
+    skip-otp-on-trusted-device: ${AUTH_SKIP_OTP_ON_TRUSTED_DEVICE:true}
+  # First-run administrator bootstrap: creates (or promotes) an account with
+  # this email to ROLE_ADMIN on startup. Set ADMIN_EMAIL to blank to disable.
+  admin:
+    email: ${ADMIN_EMAIL:admin@cloudnest.test}
+    username: ${ADMIN_USERNAME:admin}
+    password: ${ADMIN_PASSWORD:Admin@123456}
+    promote-existing: ${ADMIN_PROMOTE_EXISTING:true}
+
+# ── Transactional Email (OTP + security alerts) ──────────────
+# With MAIL_ENABLED=false (default) emails are logged to the console so
+# OTP flows are testable without credentials. Enable + provide Gmail app
+# password to deliver real email.
+mail:
+  enabled: ${MAIL_ENABLED:false}
+  host: ${MAIL_HOST:smtp.gmail.com}
+  port: ${MAIL_PORT:587}
+  username: ${MAIL_USERNAME:}
+  password: ${MAIL_PASSWORD:}
+  from: ${MAIL_FROM:CloudNest <noreply@cloudnest.local>}
+  starttls: ${MAIL_STARTTLS:true}
+  app-name: ${MAIL_APP_NAME:CloudNest}

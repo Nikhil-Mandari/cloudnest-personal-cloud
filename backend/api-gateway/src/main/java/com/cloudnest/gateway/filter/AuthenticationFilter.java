@@ -41,7 +41,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             "/api/auth/login",
             "/api/auth/refresh",
             "/api/auth/forgot-password",
-            "/api/auth/reset-password",
+            "/api/auth/otp/",
             "/api/shares/public/",
             "/actuator/",
             "/v3/api-docs",
@@ -97,10 +97,15 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
         Claims claims = claimsOpt.get();
 
         // -- Forward user identity to downstream services --------------------
+        // `set` REPLACES any caller-supplied identity headers instead of
+        // appending, so a client can never spoof X-User-Id / X-User-Role: the
+        // downstream service always sees the JWT-derived value first.
         ServerHttpRequest mutatedRequest = request.mutate()
-                .header(USER_ID_HEADER, jwtUtil.getUserId(claims).map(String::valueOf).orElse(""))
-                .header(USER_EMAIL_HEADER, jwtUtil.getEmail(claims).orElse(""))
-                .header(USER_ROLE_HEADER, jwtUtil.getRole(claims).orElse(""))
+                .headers(headers -> {
+                    headers.set(USER_ID_HEADER, jwtUtil.getUserId(claims).map(String::valueOf).orElse(""));
+                    headers.set(USER_EMAIL_HEADER, jwtUtil.getEmail(claims).orElse(""));
+                    headers.set(USER_ROLE_HEADER, jwtUtil.getRole(claims).orElse(""));
+                })
                 .build();
 
         return chain.filter(exchange.mutate().request(mutatedRequest).build());

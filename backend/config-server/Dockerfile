@@ -7,10 +7,11 @@
 #   Stage 1 (build):   Maven + Eclipse Temurin JDK 25
 #   Stage 2 (runtime): Eclipse Temurin JRE 25 (slim, non-root)
 #
-# The configuration repository (backend/config-repo) is NOT baked into
-# the image. It is mounted read-only at /app/config-repo by docker-compose
-# (see CONFIG_REPO_LOCATION). For a fully self-contained production build,
-# COPY config-repo into the image and point CONFIG_REPO_LOCATION at it.
+# The configuration repository (backend/config-repo) is baked into the
+# image at /app/config-repo so the config server is fully self-contained
+# (no runtime bind-mount dependency). The build context MUST be the
+# `backend/` directory so config-repo/ and config-server/ are visible
+# (see docker-compose.yml).
 # ═══════════════════════════════════════════════════════════════
 
 # ── Stage 1: Build ──────────────────────────────────────────────
@@ -18,12 +19,15 @@ FROM maven:3.9.11-eclipse-temurin-25 AS build
 WORKDIR /workspace
 
 # Resolve dependencies first so the layer is cached until pom.xml changes
-COPY pom.xml .
+COPY config-server/pom.xml pom.xml
 RUN --mount=type=cache,target=/root/.m2 mvn -B -q dependency:go-offline || true
 
 # Compile and package (tests run in CI, skipped here for faster builds)
-COPY src ./src
+COPY config-server/src ./src
 RUN --mount=type=cache,target=/root/.m2 mvn -B -q -DskipTests package
+
+# Copy the configuration repository into the build workspace
+COPY config-repo ./config-repo
 
 # ── Stage 2: Runtime ────────────────────────────────────────────
 FROM eclipse-temurin:25-jre
@@ -43,10 +47,13 @@ RUN apt-get update \
 WORKDIR /app
 
 ENV JAVA_OPTS="-XX:MaxRAMPercentage=75.0 -XX:+UseContainerSupport" \
-    SERVER_PORT=8888
+    SERVER_PORT=8888 \
+    CONFIG_REPO_LOCATION=/app/config-repo
 
-# Copy the jar BEFORE dropping privileges (COPY runs as the current USER)
+# Copy the jar AND the config repository BEFORE dropping privileges (COPY
+# runs as the current USER; the files are world-readable so appuser can serve them)
 COPY --from=build /workspace/target/*.jar app.jar
+COPY --from=build /workspace/config-repo /app/config-repo
 
 EXPOSE 8888
 

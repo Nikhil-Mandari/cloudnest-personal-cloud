@@ -53,6 +53,9 @@ public class FileMetadataResponse {
     @Schema(description = "Lifecycle status (ACTIVE / DELETED)", example = "ACTIVE")
     private String status;
 
+    @Schema(description = "Virus scan status (PENDING / SCANNING / CLEAN / INFECTED / ERROR)", example = "CLEAN")
+    private String scanStatus;
+
     @Schema(description = "Timestamp when the record was created", example = "2026-08-03T10:15:30")
     private LocalDateTime createdAt;
 

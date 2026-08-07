@@ -72,6 +72,25 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles admin-only endpoint access violations (403).
+     */
+    @ExceptionHandler(AdminAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAdminAccessDenied(
+            AdminAccessDeniedException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.FORBIDDEN.value())
+                .error(HttpStatus.FORBIDDEN.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    /**
      * Handles duplicate resource conflicts (409).
      */
     @ExceptionHandler(DuplicateResourceException.class)

@@ -1,5 +1,7 @@
 package com.cloudnest.file.service;
 
+import com.cloudnest.file.dto.MinioStatusResponse;
+
 import java.io.InputStream;
 
 /**
@@ -59,4 +61,13 @@ public interface MinioService {
      * @throws com.cloudnest.file.exception.MinioException if the check cannot be performed
      */
     boolean objectExists(String objectName);
+
+    /**
+     * Probes MinIO connectivity and bucket existence for the admin dashboard.
+     * Never throws — connectivity problems are reported in the response so the
+     * dashboard can surface them.
+     *
+     * @return the current status
+     */
+    MinioStatusResponse status();
 }

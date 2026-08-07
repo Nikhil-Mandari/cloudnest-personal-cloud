@@ -27,4 +27,20 @@ public class UpdatePermissionRequest {
      * Optional new expiry date. Null means no change.
      */
     private LocalDateTime expiryDate;
+
+    /**
+     * When {@code true}, removes any existing expiry so the link never expires.
+     * Takes precedence over {@code expiryDate}.
+     */
+    private Boolean clearExpiry;
+
+    /**
+     * Optional new password for the share link. Null means no change.
+     */
+    private String password;
+
+    /**
+     * When {@code true}, removes any existing password protection.
+     */
+    private Boolean clearPassword;
 }

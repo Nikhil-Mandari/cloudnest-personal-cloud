@@ -1,6 +1,7 @@
 package com.cloudnest.file.service.impl;
 
 import com.cloudnest.file.config.MinioProperties;
+import com.cloudnest.file.dto.MinioStatusResponse;
 import com.cloudnest.file.exception.BucketCreationException;
 import com.cloudnest.file.exception.MinioException;
 import com.cloudnest.file.exception.ResourceNotFoundException;
@@ -160,5 +161,38 @@ public class MinioServiceImpl implements MinioService {
             log.error("Failed to stat object '{}' in bucket '{}': {}", objectName, bucket, e.getMessage());
             throw new MinioException("Failed to check object '" + objectName + "' in MinIO", e);
         }
+    }
+
+    @Override
+    public MinioStatusResponse status() {
+        String bucket = minioProperties.getBucketName();
+        boolean reachable;
+        boolean bucketExists = false;
+
+        try {
+            bucketExists = minioClient.bucketExists(
+                    BucketExistsArgs.builder().bucket(bucket).build());
+            reachable = true;
+        } catch (Exception e) {
+            log.warn("MinIO status probe failed: {}", e.getMessage());
+            reachable = false;
+        }
+
+        String status;
+        if (!reachable) {
+            status = "Unreachable";
+        } else if (bucketExists) {
+            status = "Connected";
+        } else {
+            status = "Bucket missing";
+        }
+
+        return MinioStatusResponse.builder()
+                .endpoint(minioProperties.getEndpoint())
+                .bucket(bucket)
+                .reachable(reachable)
+                .bucketExists(bucketExists)
+                .status(status)
+                .build();
     }
 }

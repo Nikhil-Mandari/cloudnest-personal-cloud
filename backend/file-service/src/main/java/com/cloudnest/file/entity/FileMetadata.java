@@ -27,7 +27,8 @@ import java.time.LocalDateTime;
  * in MinIO object storage, referenced by {@code objectName} within
  * {@code bucketName}. The SHA-256 {@code checksum} is captured at upload time
  * for integrity verification and future duplicate detection.
- * Supports soft-delete via the {@code status} field (legacy rows only).
+ * Supports soft-delete via the {@code status} field: files moved to the trash
+ * keep their MinIO object until restored or permanently deleted.
  */
 @Entity
 @Table(name = "file_metadata")
@@ -139,13 +140,24 @@ public class FileMetadata {
      * Current lifecycle status of the file.
      * <ul>
      *   <li>{@code ACTIVE} — file is available for access</li>
-     *   <li>{@code DELETED} — file has been soft-deleted (legacy rows)</li>
+     *   <li>{@code DELETED} — file is in the trash (soft-deleted, can be restored)</li>
      * </ul>
      */
     @Enumerated(EnumType.STRING)
     @Column(name = "status", nullable = false, length = 20)
     @Builder.Default
     private FileStatus status = FileStatus.ACTIVE;
+
+    /**
+     * Current virus-scan lifecycle status.
+     * <p>
+     * Set at upload time by the configured scanner (Noop or ClamAV). Files
+     * flagged {@code INFECTED} are blocked from download / preview.
+     */
+    @Enumerated(EnumType.STRING)
+    @Column(name = "scan_status", length = 20)
+    @Builder.Default
+    private ScanStatus scanStatus = ScanStatus.CLEAN;
 
     /**
      * Timestamp when the file content was uploaded to MinIO.

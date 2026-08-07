@@ -24,4 +24,10 @@ public class LoginRequest {
 
     @NotBlank(message = "Password is required")
     private String password;
+
+    /**
+     * When {@code true} the device is remembered as trusted (skips OTP on
+     * subsequent logins from the same device).
+     */
+    private Boolean rememberDevice;
 }

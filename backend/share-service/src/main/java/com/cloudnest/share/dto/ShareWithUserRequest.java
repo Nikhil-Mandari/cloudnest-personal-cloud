@@ -40,4 +40,9 @@ public class ShareWithUserRequest {
      * Optional expiry date for the share. Null means never expires.
      */
     private LocalDateTime expiryDate;
+
+    /**
+     * Optional password protecting the share link. Null means no password.
+     */
+    private String password;
 }

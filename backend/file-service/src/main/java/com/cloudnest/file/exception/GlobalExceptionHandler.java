@@ -1,11 +1,15 @@
 package com.cloudnest.file.exception;
 
+import feign.FeignException;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -170,6 +174,25 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles admin-only endpoint access violations (403).
+     */
+    @ExceptionHandler(AdminAccessDeniedException.class)
+    public ResponseEntity<ErrorResponse> handleAdminAccessDenied(
+            AdminAccessDeniedException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.FORBIDDEN.value())
+                .error(HttpStatus.FORBIDDEN.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    /**
      * Handles uploads that exceed the configured file size limit (413).
      * Triggered by the explicit service-level size check.
      */
@@ -208,6 +231,103 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(response);
+    }
+
+    /**
+     * Handles a missing required header (e.g. {@code X-User-Id}) as 400
+     * instead of leaking a bare 500.
+     */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingRequestHeader(
+            MissingRequestHeaderException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message("Missing required header: " + ex.getHeaderName())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * Handles malformed / unreadable request bodies (400).
+     */
+    @ExceptionHandler(HttpMessageNotReadableException.class)
+    public ResponseEntity<ErrorResponse> handleUnreadableBody(
+            HttpMessageNotReadableException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message("Malformed request body: " + ex.getMessage())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * Handles database constraint violations (e.g. duplicate object name,
+     * NOT NULL violation) as a 400 with a readable message instead of a bare
+     * 500. The full exception is still logged for diagnosis.
+     */
+    @ExceptionHandler(DataIntegrityViolationException.class)
+    public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(
+            DataIntegrityViolationException ex, HttpServletRequest request) {
+
+        log.error("Database constraint violation on [{}] {}: {}",
+                request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
+
+        String message = ex.getMostSpecificCause() != null
+                ? ex.getMostSpecificCause().getMessage()
+                : ex.getMessage();
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message("Operation rejected by the database: " + message)
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * Handles downstream Folder Service failures (Feign) as a 502 with a
+     * useful message instead of a bare 500.
+     */
+    @ExceptionHandler(FeignException.class)
+    public ResponseEntity<ErrorResponse> handleFeignError(
+            FeignException ex, HttpServletRequest request) {
+
+        log.error("Downstream service error on [{}] {}: {}",
+                request.getMethod(), request.getRequestURI(), ex.getMessage(), ex);
+
+        // FeignException.status() returns 0 when no status is available.
+        int status = ex.status() >= 400 && ex.status() < 600
+                ? ex.status()
+                : HttpStatus.BAD_GATEWAY.value();
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message("Upstream service error (" + ex.getMessage() + ")")
+                .status(status)
+                .error(HttpStatus.resolve(status) != null
+                        ? HttpStatus.resolve(status).getReasonPhrase()
+                        : "Upstream Error")
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(status).body(response);
     }
 
     /**
@@ -251,6 +371,28 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).body(response);
+    }
+
+    /**
+     * Handles uploads blocked by the virus scanner (422 Unprocessable Entity).
+     */
+    @ExceptionHandler(VirusDetectedException.class)
+    public ResponseEntity<ErrorResponse> handleVirusDetected(
+            VirusDetectedException ex, HttpServletRequest request) {
+
+        log.warn("Virus detected on [{}] {}: {}",
+                request.getMethod(), request.getRequestURI(), ex.getMessage());
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.UNPROCESSABLE_ENTITY.value())
+                .error(HttpStatus.UNPROCESSABLE_ENTITY.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.UNPROCESSABLE_ENTITY).body(response);
     }
 
     /**

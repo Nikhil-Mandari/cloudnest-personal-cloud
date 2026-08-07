@@ -28,11 +28,39 @@ public class ShareResponse {
     private Long id;
     private String resourceId;
     private ResourceType resourceType;
+
+    /**
+     * Display name of the shared resource (file name or folder name), resolved
+     * from the owning service. Null when the resource could not be resolved
+     * (omitted from JSON via {@code @JsonInclude(NON_NULL)}).
+     */
+    private String resourceName;
     private Long ownerId;
     private Long sharedWithUserId;
     private Permission permission;
     private String shareToken;
     private Boolean isPublic;
     private LocalDateTime expiryDate;
+
+    /**
+     * Whether this share link is protected by a password.
+     * The hash itself is never exposed.
+     */
+    private Boolean hasPassword;
+
+    /**
+     * Number of times the share link was viewed.
+     */
+    private Long viewCount;
+
+    /**
+     * Number of times the shared resource was downloaded through this link.
+     */
+    private Long downloadCount;
+
+    /**
+     * Timestamp of the most recent access to this share.
+     */
+    private LocalDateTime lastAccessedAt;
     private LocalDateTime createdAt;
 }
