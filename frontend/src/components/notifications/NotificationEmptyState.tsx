@@ -12,19 +12,14 @@ export function NotificationEmptyState({ filtered = false }: NotificationEmptySt
   return filtered ? (
     <EmptyState
       icon={<SearchX className="h-6 w-6" />}
-<<<<<<< Updated upstream
       title="Nothing here"
       description="No notifications match this filter — try a different one."
-=======
-      title="Nothing unread"
-      description="You're all caught up — no unread notifications match this filter."
->>>>>>> Stashed changes
     />
   ) : (
     <EmptyState
       icon={<BellOff className="h-6 w-6" />}
       title="No notifications yet"
-      description="When someone shares a file or folder with you, it will show up here."
+      description="When someone shares a file with you, or there's account activity you should know about, it will show up here."
     />
   );
 }

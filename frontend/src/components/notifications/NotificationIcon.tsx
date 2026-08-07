@@ -1,4 +1,3 @@
-<<<<<<< Updated upstream
 import {
   Ban,
   Bell,
@@ -13,9 +12,6 @@ import {
   ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
-=======
-import { Ban, Bell, FileUp, FolderUp, Inbox, RefreshCw, type LucideIcon } from 'lucide-react';
->>>>>>> Stashed changes
 
 import type { NotificationType } from '@/types';
 import { cn } from '@/utils/cn';
@@ -45,7 +41,6 @@ const TYPE_STYLES: Record<NotificationType, { icon: LucideIcon; className: strin
     icon: Bell,
     className: 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
   },
-<<<<<<< Updated upstream
   // ── Phase 5: security events ─────────────────────────────────────────────
   LOGIN_ALERT: {
     icon: ShieldCheck,
@@ -67,8 +62,6 @@ const TYPE_STYLES: Record<NotificationType, { icon: LucideIcon; className: strin
     icon: Lock,
     className: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
   },
-=======
->>>>>>> Stashed changes
 };
 
 export interface NotificationIconProps {

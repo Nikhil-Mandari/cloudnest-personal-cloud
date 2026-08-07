@@ -1,10 +1,7 @@
 package com.cloudnest.auth.service;
 
-<<<<<<< Updated upstream
 import com.cloudnest.auth.client.NotificationServiceClient;
 import com.cloudnest.auth.dto.NotificationCreateRequest;
-=======
->>>>>>> Stashed changes
 import com.cloudnest.auth.entity.LoginHistory;
 import com.cloudnest.auth.entity.SecurityLog;
 import com.cloudnest.auth.entity.UserCredential;
@@ -54,30 +51,20 @@ public class SecurityEventService {
     private final UserSessionRepository sessionRepository;
     private final EmailService emailService;
     private final TrustedDeviceService trustedDeviceService;
-<<<<<<< Updated upstream
     private final NotificationServiceClient notificationClient;
-=======
->>>>>>> Stashed changes
 
     public SecurityEventService(LoginHistoryRepository loginHistoryRepository,
                                 SecurityLogRepository securityLogRepository,
                                 UserSessionRepository sessionRepository,
                                 EmailService emailService,
-<<<<<<< Updated upstream
                                 TrustedDeviceService trustedDeviceService,
                                 NotificationServiceClient notificationClient) {
-=======
-                                TrustedDeviceService trustedDeviceService) {
->>>>>>> Stashed changes
         this.loginHistoryRepository = loginHistoryRepository;
         this.securityLogRepository = securityLogRepository;
         this.sessionRepository = sessionRepository;
         this.emailService = emailService;
         this.trustedDeviceService = trustedDeviceService;
-<<<<<<< Updated upstream
         this.notificationClient = notificationClient;
-=======
->>>>>>> Stashed changes
     }
 
     /**
@@ -149,37 +136,35 @@ public class SecurityEventService {
     }
 
     /**
-<<<<<<< Updated upstream
      * Sends the appropriate sign-in alert (email + in-app notification)
      * after a successful login. New/unknown devices get a stricter alert.
-=======
-     * Sends the appropriate sign-in alert email after a successful login.
->>>>>>> Stashed changes
+     * <p>
+     * {@code knownDevice} must be evaluated <em>before</em> the session is
+     * recorded for this login (the AuthServiceImpl does this), otherwise the
+     * freshly-created session would make every device look known.
      */
-    public void sendLoginAlert(UserCredential user, ClientInfo info) {
-        if (!isKnownDevice(user, info)) {
+    public void sendLoginAlert(UserCredential user, ClientInfo info, boolean knownDevice) {
+        if (!knownDevice) {
             emailService.sendUnknownDeviceAlert(user.getEmail(), user.getUsername(), info);
-<<<<<<< Updated upstream
+            String client = describeClient(info);
             notify(user, NotificationServiceClient.TYPE_UNKNOWN_DEVICE_LOGIN,
                     "New device sign-in",
-                    "Signed in from " + describeClient(info)
-                            + " — a device we hadn't seen before.");
+                    client == null
+                            ? "We detected a sign-in from a device we hadn't seen before."
+                            : "Signed in from " + client + " — a device we hadn't seen before.");
             log(user, ACTION_LOGIN_SUCCESS, info, "Sign-in from an unknown device — alert email sent");
         } else {
             emailService.sendNewLoginAlert(user.getEmail(), user.getUsername(), info);
+            String client = describeClient(info);
             notify(user, NotificationServiceClient.TYPE_LOGIN_ALERT,
                     "New sign-in",
-                    "Signed in from " + describeClient(info) + ".");
-=======
-            log(user, ACTION_LOGIN_SUCCESS, info, "Sign-in from an unknown device — alert email sent");
-        } else {
-            emailService.sendNewLoginAlert(user.getEmail(), user.getUsername(), info);
->>>>>>> Stashed changes
+                    client == null
+                            ? "A new sign-in was detected on your account."
+                            : "Signed in from " + client + ".");
         }
     }
 
     /**
-<<<<<<< Updated upstream
      * Sends the account-locked alert (email + in-app notification).
      */
     public void sendAccountLockedAlert(UserCredential user, ClientInfo info, int lockMinutes) {
@@ -213,15 +198,18 @@ public class SecurityEventService {
     /**
      * Renders a short human-readable client description for notification
      * messages: device name · browser · location (unknown parts omitted).
+     * Returns {@code null} when the client or device is unrecognised so
+     * callers can drop the "from ..." clause entirely.
      */
     public String describeClient(ClientInfo info) {
         if (info == null || info.device() == null) {
-            return "an unrecognised device";
+            return null;
         }
-        StringBuilder sb = new StringBuilder(info.device().deviceName() == null
-                || info.device().deviceName().isBlank()
-                ? "an unrecognised device"
-                : info.device().deviceName());
+        String device = info.device().deviceName();
+        if (device == null || device.isBlank()) {
+            return null;
+        }
+        StringBuilder sb = new StringBuilder(device);
         String browser = info.device().browser();
         if (browser != null && !browser.isBlank()) {
             sb.append(" · ").append(browser);
@@ -236,12 +224,4 @@ public class SecurityEventService {
         }
         return sb.toString();
     }
-=======
-     * Sends the account-locked alert email.
-     */
-    public void sendAccountLockedAlert(UserCredential user, ClientInfo info, int lockMinutes) {
-        emailService.sendAccountLockedAlert(user.getEmail(), user.getUsername(), lockMinutes);
-        log(user, ACTION_ACCOUNT_LOCKED, info, "Account locked after repeated failed attempts");
-    }
->>>>>>> Stashed changes
 }

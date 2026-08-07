@@ -85,6 +85,8 @@ export const API_ENDPOINTS = {
     markAsRead: (id: number) => `/notifications/${id}/read`,
     markAllAsRead: '/notifications/read-all',
     remove: (id: number) => `/notifications/${id}`,
+    // ── Phase 5: clear read notifications ─────────────────────────────────
+    clearRead: '/notifications/read-all',
   },
   // ── Phase 4: admin dashboard ─────────────────────────────────────────────
   admin: {

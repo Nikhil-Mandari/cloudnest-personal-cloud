@@ -11,7 +11,13 @@ export type NotificationType =
   | 'SHARE_REVOKED'
   | 'FILE_SHARED'
   | 'FOLDER_SHARED'
-  | 'SYSTEM';
+  | 'SYSTEM'
+  // ── Phase 5: security events ─────────────────────────────────────────────
+  | 'LOGIN_ALERT'
+  | 'UNKNOWN_DEVICE_LOGIN'
+  | 'PASSWORD_CHANGED'
+  | 'PASSWORD_RESET'
+  | 'ACCOUNT_LOCKED';
 
 export interface AppNotification {
   id: number;

@@ -72,7 +72,6 @@ export function useNotificationMutations() {
     onError: (error) => toast.error(getErrorMessage(error, 'Failed to delete the notification.')),
   });
 
-<<<<<<< Updated upstream
   const clearRead = useMutation({
     mutationFn: () => notificationService.clearRead(),
     onSuccess: () => {
@@ -83,7 +82,4 @@ export function useNotificationMutations() {
   });
 
   return { markAsRead, markAllAsRead, deleteNotification, clearRead };
-=======
-  return { markAsRead, markAllAsRead, deleteNotification };
->>>>>>> Stashed changes
 }

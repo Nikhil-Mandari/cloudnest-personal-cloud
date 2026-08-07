@@ -18,4 +18,6 @@ export const notificationService = {
 
   deleteNotification: (id: number) =>
     apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.notifications.remove(id)),
+
+  clearRead: () => apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.notifications.clearRead),
 };

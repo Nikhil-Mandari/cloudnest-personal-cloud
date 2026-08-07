@@ -1,5 +1,6 @@
 package com.cloudnest.auth.service.impl;
 
+import com.cloudnest.auth.client.NotificationServiceClient;
 import com.cloudnest.auth.client.UserServiceClient;
 import com.cloudnest.auth.config.AuthProperties;
 import com.cloudnest.auth.dto.AdminSecurityOverviewResponse;
@@ -399,6 +400,10 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
         securityEvents.log(user, SecurityEventService.ACTION_PASSWORD_RESET, clientInfo,
                 "Password reset via OTP; all sessions ended");
         emailService.sendPasswordResetConfirmation(user.getEmail(), user.getUsername());
+        securityEvents.notify(user, NotificationServiceClient.TYPE_PASSWORD_RESET,
+                "Password reset",
+                "Your password was reset through the forgot-password flow. Every other "
+                        + "session was signed out for your protection.");
         log.info("Password reset for userId={}", userId);
     }
 
@@ -518,6 +523,13 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
         securityEvents.log(user, SecurityEventService.ACTION_PASSWORD_CHANGED, clientInfo,
                 "Password changed from settings");
         emailService.sendPasswordChangedAlert(user.getEmail(), user.getUsername(), clientInfo);
+        String changedFrom = securityEvents.describeClient(clientInfo);
+        String changedPrefix = changedFrom == null
+                ? "Your password was changed"
+                : "Your password was changed from " + changedFrom;
+        securityEvents.notify(user, NotificationServiceClient.TYPE_PASSWORD_CHANGED,
+                "Password changed",
+                changedPrefix + ". If this wasn't you, contact support immediately.");
         log.info("Password changed for userId={}", userId);
     }
 
@@ -795,6 +807,10 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
         // Idempotent on the user-service side; never blocks the sign-in.
         syncProfileBestEffort(user);
 
+        // Detect unknown devices BEFORE the session is recorded — otherwise
+        // the session created below would make every device look "known".
+        boolean knownDevice = securityEvents.isKnownDevice(user, clientInfo);
+
         boolean trusted = rememberDevice || trustedDeviceService.isTrusted(user.getId(), deviceId);
         if (rememberDevice && deviceId != null && !deviceId.isBlank()) {
             trustedDeviceService.markTrusted(user, clientInfo);
@@ -806,7 +822,7 @@ public class AuthServiceImpl implements com.cloudnest.auth.service.AuthService {
         RefreshTokenService.TokenPair pair = refreshTokenService.issue(
                 user.getId(), user.getUsername(), user.getEmail(), user.getRole(), sessionId);
 
-        securityEvents.sendLoginAlert(user, clientInfo);
+        securityEvents.sendLoginAlert(user, clientInfo, knownDevice);
         securityEvents.log(user, SecurityEventService.ACTION_LOGIN_SUCCESS, clientInfo, "Signed in");
 
         return AuthResponse.builder()

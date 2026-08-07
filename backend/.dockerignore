@@ -1,0 +1,10 @@
+# Slim the build context for Dockerfiles that use `backend/` as context.
+**/target/
+**/.git/
+**/.mvn/
+**/*.iml
+**/.idea/
+**/.vscode/
+.git
+README.md
+docs/

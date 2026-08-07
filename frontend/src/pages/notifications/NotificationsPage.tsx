@@ -1,19 +1,59 @@
 import { useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { Bell, CheckCheck } from 'lucide-react';
+import { Bell, CheckCheck, Trash2 } from 'lucide-react';
 
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageHeader } from '@/components/common/PageHeader';
-import { Button } from '@/components/ui/Button';
-import { Card } from '@/components/ui/Card';
 import { NotificationEmptyState } from '@/components/notifications/NotificationEmptyState';
 import { NotificationItem } from '@/components/notifications/NotificationItem';
 import { NotificationSkeletons } from '@/components/notifications/NotificationSkeletons';
+import { Button } from '@/components/ui/Button';
+import { Card } from '@/components/ui/Card';
 import { useNotificationMutations, useNotificationsQuery } from '@/hooks/useNotifications';
-import type { AppNotification } from '@/types';
+import type { AppNotification, NotificationType } from '@/types';
 import { cn } from '@/utils/cn';
 
-type NotificationFilter = 'all' | 'unread';
+type NotificationFilter = 'all' | 'unread' | 'shares' | 'security' | 'system';
+
+/** Types belonging to each category (everything else counts as System). */
+const SHARE_TYPES: readonly NotificationType[] = [
+  'SHARE_RECEIVED',
+  'SHARE_UPDATED',
+  'SHARE_REVOKED',
+  'FILE_SHARED',
+  'FOLDER_SHARED',
+];
+
+const SECURITY_TYPES: readonly NotificationType[] = [
+  'LOGIN_ALERT',
+  'UNKNOWN_DEVICE_LOGIN',
+  'PASSWORD_CHANGED',
+  'PASSWORD_RESET',
+  'ACCOUNT_LOCKED',
+];
+
+const FILTERS: ReadonlyArray<{ value: NotificationFilter; label: string }> = [
+  { value: 'all', label: 'All' },
+  { value: 'unread', label: 'Unread' },
+  { value: 'shares', label: 'Shares' },
+  { value: 'security', label: 'Security' },
+  { value: 'system', label: 'System' },
+];
+
+function matchesFilter(notification: AppNotification, filter: NotificationFilter): boolean {
+  switch (filter) {
+    case 'unread':
+      return !notification.isRead;
+    case 'shares':
+      return SHARE_TYPES.includes(notification.type);
+    case 'security':
+      return SECURITY_TYPES.includes(notification.type);
+    case 'system':
+      return notification.type === 'SYSTEM';
+    default:
+      return true;
+  }
+}
 
 interface NotificationGroup {
   label: string;
@@ -51,28 +91,29 @@ function groupByDay(items: AppNotification[]): NotificationGroup[] {
   return groups;
 }
 
-const FILTERS: ReadonlyArray<{ value: NotificationFilter; label: string }> = [
-  { value: 'all', label: 'All' },
-  { value: 'unread', label: 'Unread' },
-];
-
 export function NotificationsPage() {
   const [filter, setFilter] = useState<NotificationFilter>('all');
 
   const { data: notifications, isLoading, isError, refetch } = useNotificationsQuery();
-  const { markAsRead, markAllAsRead, deleteNotification } = useNotificationMutations();
+  const { markAsRead, markAllAsRead, deleteNotification, clearRead } = useNotificationMutations();
 
-  const unreadCount = notifications?.filter((n) => !n.isRead).length ?? 0;
-  const visible =
-    notifications?.filter((n) => (filter === 'unread' ? !n.isRead : true)) ?? [];
+  const all = notifications ?? [];
+  const unreadCount = all.filter((n) => !n.isRead).length;
+  const readCount = all.length - unreadCount;
+  const visible = all.filter((n) => matchesFilter(n, filter));
+
+  const countFor = (value: NotificationFilter): number =>
+    value === 'all' ? all.length : all.filter((n) => matchesFilter(n, value)).length;
 
   const isMutating = markAsRead.isPending || deleteNotification.isPending;
+  const hasUnread = unreadCount > 0;
+  const hasRead = readCount > 0;
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Notifications"
-        description="Shares, alerts and account activity, all in one place."
+        description="Shares, security alerts and account activity, all in one place."
       />
 
       <Card>
@@ -80,42 +121,66 @@ export function NotificationsPage() {
           <div
             role="group"
             aria-label="Filter notifications"
-            className="flex overflow-hidden rounded-lg border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
+            className="flex flex-wrap overflow-hidden rounded-lg border border-gray-300 bg-white shadow-sm dark:border-gray-700 dark:bg-gray-900"
           >
-            {FILTERS.map(({ value, label }) => (
-              <button
-                key={value}
-                type="button"
-                onClick={() => setFilter(value)}
-                aria-pressed={filter === value}
-                className={cn(
-                  'h-9 px-4 text-sm font-medium transition-colors',
-                  filter === value
-                    ? 'bg-brand-500/10 text-brand-600 dark:text-brand-400'
-                    : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200',
-                )}
-              >
-                {label}
-                {value === 'unread' && unreadCount > 0 && (
-                  <span className="bg-brand-500 ml-1.5 inline-grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-bold text-white">
-                    {unreadCount}
-                  </span>
-                )}
-              </button>
-            ))}
+            {FILTERS.map(({ value, label }) => {
+              const count = countFor(value);
+              const active = filter === value;
+              return (
+                <button
+                  key={value}
+                  type="button"
+                  onClick={() => setFilter(value)}
+                  aria-pressed={active}
+                  className={cn(
+                    'h-9 px-3.5 text-sm font-medium transition-colors sm:px-4',
+                    active
+                      ? 'bg-brand-500/10 text-brand-600 dark:text-brand-400'
+                      : 'text-gray-500 hover:bg-gray-50 hover:text-gray-700 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-gray-200',
+                  )}
+                >
+                  {label}
+                  {count > 0 && (
+                    <span
+                      className={cn(
+                        'ml-1.5 inline-grid h-4 min-w-4 place-items-center rounded-full px-1 text-[10px] font-bold',
+                        active
+                          ? 'bg-brand-500 text-white'
+                          : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
+                      )}
+                    >
+                      {count}
+                    </span>
+                  )}
+                </button>
+              );
+            })}
           </div>
 
-          <Button
-            variant="outline"
-            size="sm"
-            className="ml-auto"
-            leftIcon={<CheckCheck className="h-3.5 w-3.5" />}
-            disabled={unreadCount === 0 || markAllAsRead.isPending}
-            isLoading={markAllAsRead.isPending}
-            onClick={() => markAllAsRead.mutate()}
-          >
-            Mark all as read
-          </Button>
+          <div className="ml-auto flex items-center gap-2">
+            {hasRead && (
+              <Button
+                variant="ghost"
+                size="sm"
+                leftIcon={<Trash2 className="h-3.5 w-3.5" />}
+                disabled={clearRead.isPending}
+                isLoading={clearRead.isPending}
+                onClick={() => clearRead.mutate()}
+              >
+                Clear read
+              </Button>
+            )}
+            <Button
+              variant="outline"
+              size="sm"
+              leftIcon={<CheckCheck className="h-3.5 w-3.5" />}
+              disabled={!hasUnread || markAllAsRead.isPending}
+              isLoading={markAllAsRead.isPending}
+              onClick={() => markAllAsRead.mutate()}
+            >
+              Mark all as read
+            </Button>
+          </div>
         </div>
 
         {isLoading ? (
