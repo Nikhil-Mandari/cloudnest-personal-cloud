@@ -17,7 +17,9 @@ export function UserMenu() {
 
   useClickOutside(containerRef, () => setOpen(false));
 
-  const displayName = user?.fullName ?? 'Guest';
+  // NOTE: clean User had fullName; the recovery User contract uses
+  // displayName/username (matches the auth-ui unit).
+  const displayName = user?.displayName ?? user?.username ?? 'Guest';
   const email = user?.email ?? '';
 
   const handleLogout = () => {

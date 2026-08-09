@@ -16,6 +16,13 @@ import {
 import { useAuthMutations } from '@/hooks/useAuthMutations';
 import type { RegisterFormValues } from '@/types';
 
+const registerDefaultValues: RegisterFormValues = {
+  fullName: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+};
+
 export function RegisterPage() {
   const { registerMutation } = useAuthMutations();
 
@@ -25,7 +32,7 @@ export function RegisterPage() {
     getValues,
     formState: { errors },
   } = useForm<RegisterFormValues>({
-    defaultValues: { fullName: '', email: '', password: '', confirmPassword: '' },
+    defaultValues: registerDefaultValues,
   });
 
   const onSubmit = (values: RegisterFormValues) => {

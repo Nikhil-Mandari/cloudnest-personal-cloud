@@ -20,7 +20,9 @@ const STORAGE_TOTAL_BYTES = 100 * 1024 ** 3;
 
 export function DashboardPage() {
   const { user } = useAuth();
-  const firstName = user?.fullName.split(' ')[0] ?? 'there';
+  // NOTE: clean User had fullName; the recovery User contract uses
+  // displayName/username (matches the auth-ui unit).
+  const firstName = user?.displayName?.split(' ')[0] ?? 'there';
 
   return (
     <div className="space-y-6">

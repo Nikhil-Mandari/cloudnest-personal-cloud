@@ -67,10 +67,7 @@ export function FoldersPage() {
   const [renameTarget, setRenameTarget] = useState<Folder | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<Folder | null>(null);
 
-  // NOTE: clean User contract has fullName (recovery has displayName/username).
-  // Revert to `user?.displayName ?? user?.username ?? 'You'` when the auth-ui
-  // unit swaps in the recovery User type.
-  const ownerName = user?.fullName ?? 'You';
+  const ownerName = user?.displayName ?? user?.username ?? 'You';
 
   const visibleFolders = useMemo(
     () => sortFolders(filterFolders(folders, searchQuery), sortKey, sortDirection),

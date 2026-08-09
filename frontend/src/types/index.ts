@@ -2,20 +2,51 @@
  * Barrel export for all domain types.
  *
  * NOTE: minimal reconstruction — exports only the type modules present on
- * this branch (api / auth / folder / explorer / file / fileAdvanced). The
- * remaining domain type modules (share, notification, admin, user) are added
+ * this branch (api / auth / user / folder / explorer / file / fileAdvanced).
+ * The remaining domain type modules (share, notification, admin) are added
  * incrementally as their slices land.
  */
 export type { ApiErrorResponse, ApiResponse, PaginatedResponse } from './api.types';
 export type {
+  AccountStatus,
   AuthResponse,
+  DisableTwoFactorRequest,
+  EnableTwoFactorRequest,
+  EnableTwoFactorResponse,
+  ForgotPasswordRequest,
   LoginFormValues,
+  LoginHistoryEntry,
   LoginRequest,
+  LoginResponse,
+  OtpDispatchResponse,
+  OtpPurpose,
+  PasskeyAuthenticationFinishRequest,
+  PasskeyAuthenticationStart,
+  PasskeyCredentialInfo,
+  PasskeyRegistrationFinishRequest,
+  PasskeyRegistrationStart,
+  RefreshTokenRequest,
+  RegenerateBackupCodesResponse,
   RegisterFormValues,
   RegisterRequest,
+  RegisterResponse,
+  ResendOtpRequest,
+  ResetPasswordRequest,
+  ResetTokenResponse,
+  SecurityLogEntry,
+  SecurityOverview,
+  SessionInfo,
+  TrustedDeviceInfo,
+  TwoFactorLoginRequest,
+  TwoFactorSetup,
+  TwoFactorStatus,
   User,
   UserRole,
+  VerifyOtpPurpose,
+  VerifyOtpRequest,
+  VerifyOtpState,
 } from './auth.types';
+export type { ChangePasswordRequest, UpdateProfileRequest, UserProfile } from './user.types';
 export type { CreateFolderRequest, Folder, FolderSortKey } from './folder.types';
 export type {
   FileTypeCategory,
