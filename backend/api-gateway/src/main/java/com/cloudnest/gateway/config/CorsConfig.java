@@ -35,6 +35,9 @@ public class CorsConfig {
     private static final List<String> ALLOWED_HEADERS = List.of(
             "Authorization",
             "Content-Type",
+            // Stable device id sent by the frontend axios interceptor on every
+            // request (OTP / trusted-device flows) — required for CORS preflight.
+            "X-Device-Id",
             "X-Requested-With",
             "Accept",
             "Origin",
