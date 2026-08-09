@@ -3,8 +3,8 @@
  *
  * NOTE: minimal reconstruction — exports only the type modules present on
  * this branch (api / auth / user / folder / explorer / file / fileAdvanced /
- * share). The remaining domain type modules (notification, admin) are added
- * incrementally as their slices land.
+ * share / notification). The remaining domain type module (admin) is added
+ * incrementally when its slice lands.
  */
 export type { ApiErrorResponse, ApiResponse, PaginatedResponse } from './api.types';
 export type {
@@ -88,3 +88,4 @@ export type {
   UpdateShareRequest,
   VerifySharePasswordRequest,
 } from './share.types';
+export type { AppNotification, NotificationType } from './notification.types';
