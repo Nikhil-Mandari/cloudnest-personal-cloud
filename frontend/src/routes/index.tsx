@@ -6,6 +6,8 @@ import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { GuestRoute } from './GuestRoute';
 import {
+  AnalyticsPage,
+  AuditLogsPage,
   DashboardPage,
   FilesPage,
   FoldersPage,
@@ -56,6 +58,8 @@ export const router = createBrowserRouter([
           { path: APP_ROUTES.profile, element: <ProfilePage /> },
           { path: APP_ROUTES.settings, element: <SettingsPage /> },
           { path: APP_ROUTES.notifications, element: <NotificationsPage /> },
+          { path: APP_ROUTES.analytics, element: <AnalyticsPage /> },
+          { path: APP_ROUTES.auditLogs, element: <AuditLogsPage /> },
           { path: APP_ROUTES.security, element: <SecurityPage /> },
         ],
       },
