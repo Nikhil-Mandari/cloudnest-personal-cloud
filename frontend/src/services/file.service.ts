@@ -2,11 +2,18 @@ import { apiClient } from '@/api/axios';
 import { API_ENDPOINTS } from '@/constants/apiEndpoints';
 import type {
   ApiResponse,
-  DuplicateAction,
+  AuditLogEntry,
+  DownloadZipRequest,
   FileDetail,
   FileItem,
+  FileVersion,
+  PagedAuditLogs,
+  ScanStatusInfo,
+  StorageOverview,
   UploadResult,
 } from '@/types';
+import type { DuplicateAction } from '@/types';
+import { blobDownload } from '@/utils/download';
 
 export interface UploadFileOptions {
   /** Destination folder UUID (omitted = root). */
@@ -24,11 +31,6 @@ export interface UploadFileOptions {
 
 /**
  * File service (file-service).
- *
- * NOTE: minimal reconstruction — only the methods backed by endpoints present
- * on this branch's API map. The trash / version-history / ZIP / analytics /
- * audit / scan methods are intentionally deferred and restored when their
- * slices land (they require `apiEndpoints.files` keys not yet available).
  *
  * Every mutation endpoint is keyed by the internal numeric `id` (the list
  * endpoints expose it as `FileItem.id`); `fileId` is the public UUID used for
@@ -97,4 +99,76 @@ export const fileService = {
 
   restoreFile: (id: number) =>
     apiClient.patch<ApiResponse<FileDetail>>(API_ENDPOINTS.files.restore(id)),
+
+  getTrashFiles: () =>
+    apiClient.get<ApiResponse<FileItem[]>>(API_ENDPOINTS.files.trash),
+
+  permanentlyDeleteFile: (id: number) =>
+    apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.files.permanentRemove(id)),
+
+  emptyTrash: () => apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.files.trash),
+
+  // ── Phase 2: version history ──────────────────────────────────────────────
+
+  getVersions: (id: number) =>
+    apiClient.get<ApiResponse<FileVersion[]>>(API_ENDPOINTS.files.versions(id)),
+
+  uploadNewVersion: (id: number, file: File) => {
+    const formData = new FormData();
+    formData.append('file', file);
+    return apiClient.post<ApiResponse<FileDetail>>(API_ENDPOINTS.files.versions(id), formData, {
+      headers: { 'Content-Type': null },
+    });
+  },
+
+  restoreVersion: (id: number, versionId: number) =>
+    apiClient.post<ApiResponse<FileDetail>>(API_ENDPOINTS.files.restoreVersion(id, versionId)),
+
+  deleteVersion: (id: number, versionId: number) =>
+    apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.files.version(id, versionId)),
+
+  downloadVersion: (id: number, versionId: number) =>
+    apiClient.get<Blob>(API_ENDPOINTS.files.downloadVersion(id, versionId), {
+      responseType: 'blob',
+    }),
+
+  // ── Phase 2: bulk download, analytics, audit, scan status ─────────────────
+
+  downloadZip: async (request: DownloadZipRequest, fileName = 'cloudnest-export.zip') => {
+    const { data } = await apiClient.post<Blob>(API_ENDPOINTS.files.downloadZip, request, {
+      responseType: 'blob',
+    });
+    blobDownload(data, fileName);
+  },
+
+  getStorageOverview: () =>
+    apiClient.get<ApiResponse<StorageOverview>>(API_ENDPOINTS.files.analytics),
+
+  getAuditLogs: (params: { page?: number; size?: number; action?: string }) =>
+    apiClient.get<ApiResponse<PagedAuditLogs>>(API_ENDPOINTS.files.auditLogs, { params }),
+
+  getScanStatus: (id: number) =>
+    apiClient.get<ApiResponse<ScanStatusInfo>>(API_ENDPOINTS.files.scanStatus(id)),
+
+  /** All audit actions the trail can contain (for filter chips). */
+  auditActions: (): AuditLogEntry['action'][] => [
+    'UPLOAD',
+    'UPLOAD_REPLACED',
+    'UPLOAD_DUPLICATE_SKIPPED',
+    'DOWNLOAD',
+    'SHARE_DOWNLOAD',
+    'PREVIEW',
+    'RENAME',
+    'MOVE',
+    'DELETE',
+    'RESTORE',
+    'PERMANENT_DELETE',
+    'EMPTY_TRASH',
+    'FAVORITE_ADD',
+    'FAVORITE_REMOVE',
+    'VERSION_UPLOAD',
+    'VERSION_RESTORE',
+    'VERSION_DELETE',
+    'ZIP_DOWNLOAD',
+  ],
 };

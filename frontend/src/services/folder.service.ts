@@ -26,4 +26,15 @@ export const folderService = {
 
   deleteFolder: (id: string) =>
     apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.folders.remove(id)),
+
+  getTrashFolders: () =>
+    apiClient.get<ApiResponse<Folder[]>>(API_ENDPOINTS.folders.trash),
+
+  restoreFolder: (id: string) =>
+    apiClient.patch<ApiResponse<Folder>>(API_ENDPOINTS.folders.restore(id)),
+
+  permanentlyDeleteFolder: (id: string) =>
+    apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.folders.permanentRemove(id)),
+
+  emptyTrash: () => apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.folders.trash),
 };
