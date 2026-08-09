@@ -1,5 +1,6 @@
 package com.cloudnest.user.service.impl;
 
+import com.cloudnest.user.dto.CreateUserRequest;
 import com.cloudnest.user.dto.UpdateProfileRequest;
 import com.cloudnest.user.dto.UserProfileResponse;
 import com.cloudnest.user.entity.User;
@@ -28,6 +29,41 @@ public class UserServiceImpl implements UserService {
 
     public UserServiceImpl(UserRepository userRepository) {
         this.userRepository = userRepository;
+    }
+
+    /**
+     * Creates a new user profile.
+     */
+    @Override
+    @Transactional
+    public UserProfileResponse createUser(CreateUserRequest request) {
+        log.debug("Creating user profile: id={}, username='{}', email='{}'",
+                request.getId(), request.getUsername(), request.getEmail());
+
+        // -- Check for duplicates --------------------------------------------------
+        if (userRepository.existsByUsername(request.getUsername())) {
+            log.warn("Create user failed: username '{}' already exists", request.getUsername());
+            throw new DuplicateResourceException("Username '" + request.getUsername() + "' is already taken");
+        }
+        if (userRepository.existsByEmail(request.getEmail())) {
+            log.warn("Create user failed: email '{}' already exists", request.getEmail());
+            throw new DuplicateResourceException("Email '" + request.getEmail() + "' is already registered");
+        }
+
+        User user = User.builder()
+                .id(request.getId())
+                .username(request.getUsername())
+                .email(request.getEmail())
+                .displayName(request.getDisplayName())
+                .role(request.getRole() != null ? request.getRole() : "ROLE_USER")
+                .enabled(true)
+                .build();
+
+        User saved = userRepository.save(user);
+        log.info("User profile created successfully: id={}, username='{}'",
+                saved.getId(), saved.getUsername());
+
+        return UserMapper.toProfileResponse(saved);
     }
 
     /**
