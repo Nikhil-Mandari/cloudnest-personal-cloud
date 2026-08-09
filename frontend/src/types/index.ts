@@ -2,8 +2,8 @@
  * Barrel export for all domain types.
  *
  * NOTE: minimal reconstruction — exports only the type modules present on
- * this branch (api / auth / explorer / file / fileAdvanced). The remaining
- * domain type modules (folder, share, notification, admin, user) are added
+ * this branch (api / auth / folder / explorer / file / fileAdvanced). The
+ * remaining domain type modules (share, notification, admin, user) are added
  * incrementally as their slices land.
  */
 export type { ApiErrorResponse, ApiResponse, PaginatedResponse } from './api.types';
@@ -16,6 +16,7 @@ export type {
   User,
   UserRole,
 } from './auth.types';
+export type { CreateFolderRequest, Folder, FolderSortKey } from './folder.types';
 export type {
   FileTypeCategory,
   FileTypeFilter,
