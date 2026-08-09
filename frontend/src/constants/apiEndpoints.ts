@@ -15,6 +15,9 @@ export const API_ENDPOINTS = {
   folders: {
     list: '/folders',
     create: '/folders',
+    root: '/folders/root',
+    detail: (id: string) => `/folders/${id}`,
+    children: (id: string) => `/folders/${id}/children`,
     rename: (id: string) => `/folders/${id}`,
     remove: (id: string) => `/folders/${id}`,
   },

@@ -1,16 +1,29 @@
 import { apiClient } from '@/api/axios';
 import { API_ENDPOINTS } from '@/constants/apiEndpoints';
-import type { ApiResponse, Folder } from '@/types';
+import type { ApiResponse, CreateFolderRequest, Folder } from '@/types';
 
-/**
- * Folder service (folder-service).
- *
- * NOTE: minimal reconstruction — only the methods backed by endpoints present
- * on this branch's API map. The root / detail / children / trash / restore /
- * permanent-delete methods are intentionally deferred and restored when the
- * FoldersPage slice lands (they require `apiEndpoints.folders` keys not yet
- * available).
- */
+/** Folder service (folder-service). */
 export const folderService = {
+  /** All active folders (flat list — used by the move dialog). */
   getFolders: () => apiClient.get<ApiResponse<Folder[]>>(API_ENDPOINTS.folders.list),
+
+  /** Root-level folders (no parent). */
+  getRootFolders: () => apiClient.get<ApiResponse<Folder[]>>(API_ENDPOINTS.folders.root),
+
+  /** Single folder by UUID. */
+  getFolder: (id: string) =>
+    apiClient.get<ApiResponse<Folder>>(API_ENDPOINTS.folders.detail(id)),
+
+  /** Immediate children of a folder. */
+  getFolderChildren: (id: string) =>
+    apiClient.get<ApiResponse<Folder[]>>(API_ENDPOINTS.folders.children(id)),
+
+  createFolder: (payload: CreateFolderRequest) =>
+    apiClient.post<ApiResponse<Folder>>(API_ENDPOINTS.folders.create, payload),
+
+  renameFolder: (id: string, name: string) =>
+    apiClient.put<ApiResponse<Folder>>(API_ENDPOINTS.folders.rename(id), { name }),
+
+  deleteFolder: (id: string) =>
+    apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.folders.remove(id)),
 };
