@@ -90,7 +90,7 @@ src/
 | File operations       | -                                                     | Upload (dropzone/progress), download, preview (incl. PDF), rename, move, delete, duplicate, versions, zip |
 | Folders               | `/folders`                                            | Folder management |
 | Sharing               | `/shared`                                             | Share dialogs, expiry/permission badges |
-| My Shares             | `/my-shares` (page file present, **route not wired**) | See *Known gaps* below |
+| My Shares             | `/my-shares`                                          | Manage shares (route wired, guest-safe redirect) |
 | Public share links    | `/s/:token` (public, no auth)                         | Password gate, download, preview |
 | Trash                 | `/trash`                                              | Restore / permanent delete |
 | Profile               | `/profile`                                            | User info, avatar, change password |
@@ -177,7 +177,7 @@ The frontend was reconstructed against the recovery reference
 `recovery/cloudnest-full-work` (`dd74437`) through a sequence of
 feature-scoped passes and is now **aligned with intentional differences**:
 
-- `183 / 188` recovery source files are **byte-for-byte identical**.
+- `184 / 188` recovery source files are **byte-for-byte identical**.
 - `package.json`, `package-lock.json`, `apiEndpoints.ts`, `routes.ts` and
   `app.ts` are byte-identical to recovery.
 - `types/index.ts` - same exports (a superset: also exports
@@ -190,13 +190,18 @@ feature-scoped passes and is now **aligned with intentional differences**:
   (the app uses `components/files/SearchBar.tsx` and
   `layout/GlobalSearch.tsx`).
 
-### Known gaps
+### Alignment status
 
-- `/my-shares` route is not wired: `MySharesPage.tsx` is restored and the
-  sidebar shows a live "My Shares" link, but the route is missing, so the
-  link currently lands on the 404 page.
-- `Highlight.tsx` is the common-ui-era single-match version; recovery
-  evolved it to multi-match highlighting.
+- **Unexpected recovery differences: 0.** The `/my-shares` route is wired
+  (guest access redirects to `/login`, runtime-verified) and
+  `Highlight.tsx` is byte-for-byte aligned with recovery.
+- `184 / 188` recovery source files are byte-for-byte identical; the 3
+  remaining content-differing files (`routes/index.tsx`,
+  `routes/pages.ts`, `types/index.ts`) are intentional, and the `/admin`
+  route stays intentionally deferred (guard restored standalone).
+
+**Backend-dependent testing** (login, file CRUD, sharing, notifications,
+MFA, gateway health) remains pending until the backend stack is running.
 
 **Not claimed:** byte-for-byte equality with recovery, since the
 intentional differences above remain.
