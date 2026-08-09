@@ -10,6 +10,12 @@ export const LoginPage = lazy(() =>
 export const RegisterPage = lazy(() =>
   import('@/pages/auth/RegisterPage').then((m) => ({ default: m.RegisterPage })),
 );
+export const VerifyOtpPage = lazy(() =>
+  import('@/pages/auth/VerifyOtpPage').then((m) => ({ default: m.VerifyOtpPage })),
+);
+export const ForgotPasswordPage = lazy(() =>
+  import('@/pages/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
+);
 export const DashboardPage = lazy(() =>
   import('@/pages/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 );

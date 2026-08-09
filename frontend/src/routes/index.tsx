@@ -9,6 +9,7 @@ import {
   DashboardPage,
   FilesPage,
   FoldersPage,
+  ForgotPasswordPage,
   LoginPage,
   NotificationsPage,
   ProfilePage,
@@ -16,6 +17,7 @@ import {
   SettingsPage,
   SharedPage,
   TrashPage,
+  VerifyOtpPage,
 } from './pages';
 import { ProtectedRoute } from './ProtectedRoute';
 
@@ -31,6 +33,8 @@ export const router = createBrowserRouter([
         children: [
           { path: APP_ROUTES.login, element: <LoginPage /> },
           { path: APP_ROUTES.register, element: <RegisterPage /> },
+          { path: APP_ROUTES.verifyOtp, element: <VerifyOtpPage /> },
+          { path: APP_ROUTES.forgotPassword, element: <ForgotPasswordPage /> },
         ],
       },
     ],
