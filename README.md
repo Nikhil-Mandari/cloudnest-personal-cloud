@@ -135,6 +135,10 @@ project root.
 
 **Prerequisites:** Docker Engine + Docker Compose v2 (BuildKit is the default).
 
+> ⚠️ **Memory:** the full stack runs ~9 Spring Boot JVMs inside the Docker VM —
+> **16 GB RAM recommended**. On an ~8 GB machine, run infrastructure + selected
+> services only (see [`docker/README.md`](docker/README.md) → System Requirements).
+
 ### Quick start
 
 ```bash
