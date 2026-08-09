@@ -2,8 +2,8 @@
  * Barrel export for all domain types.
  *
  * NOTE: minimal reconstruction — exports only the type modules present on
- * this branch (api / auth / user / folder / explorer / file / fileAdvanced).
- * The remaining domain type modules (share, notification, admin) are added
+ * this branch (api / auth / user / folder / explorer / file / fileAdvanced /
+ * share). The remaining domain type modules (notification, admin) are added
  * incrementally as their slices land.
  */
 export type { ApiErrorResponse, ApiResponse, PaginatedResponse } from './api.types';
@@ -76,3 +76,15 @@ export type {
   StorageOverview,
   UsagePoint,
 } from './fileAdvanced.types';
+export type {
+  CreateShareRequest,
+  MySharesSortKey,
+  ShareAnalytics,
+  SharePermission,
+  ShareRecord,
+  ShareResourceType,
+  ShareSortKey,
+  ShareTypeFilter,
+  UpdateShareRequest,
+  VerifySharePasswordRequest,
+} from './share.types';
