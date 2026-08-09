@@ -1,6 +1,8 @@
 package com.cloudnest.auth.controller;
 
+import com.cloudnest.auth.client.UserServiceClient;
 import com.cloudnest.auth.dto.AuthResponse;
+import com.cloudnest.auth.dto.CreateProfileRequest;
 import com.cloudnest.auth.dto.LoginRequest;
 import com.cloudnest.auth.dto.RegisterRequest;
 import com.cloudnest.auth.service.AuthService;
@@ -28,9 +30,11 @@ import org.springframework.web.bind.annotation.RestController;
 public class AuthController {
 
     private final AuthService authService;
+    private final UserServiceClient userServiceClient;
 
-    public AuthController(AuthService authService) {
+    public AuthController(AuthService authService, UserServiceClient userServiceClient) {
         this.authService = authService;
+        this.userServiceClient = userServiceClient;
     }
 
     /**
@@ -46,7 +50,11 @@ public class AuthController {
 
         log.info("POST /api/auth/register - username={}", request.getUsername());
 
+        // register() is transactional — it has committed by the time it returns,
+        // so the remote provisioning call below never holds the Auth DB transaction.
         AuthResponse authResponse = authService.register(request);
+
+        provisionProfile(authResponse);
 
         return ResponseEntity.status(HttpStatus.CREATED)
                 .body(StandardResponse.<AuthResponse>builder()
@@ -55,6 +63,32 @@ public class AuthController {
                         .data(authResponse)
                         .path(httpRequest.getRequestURI())
                         .build());
+    }
+
+    /**
+     * Best-effort profile provisioning: creates the matching profile in the
+     * User Service ({@code user_db.users}) using the same numeric user ID.
+     * <p>
+     * Registration must NOT fail when the User Service is unavailable, so any
+     * failure is logged and swallowed — the missing profile is healed lazily
+     * by {@code GET /api/users/me} the next time it is requested.
+     *
+     * @param authResponse the successful registration result
+     */
+    private void provisionProfile(AuthResponse authResponse) {
+        try {
+            CreateProfileRequest profile = CreateProfileRequest.builder()
+                    .id(authResponse.getUserId())
+                    .username(authResponse.getUsername())
+                    .email(authResponse.getEmail())
+                    .role(authResponse.getRole())
+                    .build();
+            userServiceClient.createProfile(profile);
+            log.info("User profile provisioned via user-service: userId={}", authResponse.getUserId());
+        } catch (Exception e) {
+            log.warn("Profile provisioning skipped/failed for userId={} — registration continues: {}",
+                    authResponse.getUserId(), e.getMessage());
+        }
     }
 
     /**

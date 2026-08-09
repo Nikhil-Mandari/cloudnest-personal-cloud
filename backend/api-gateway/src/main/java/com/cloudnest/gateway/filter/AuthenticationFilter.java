@@ -26,7 +26,8 @@ import java.util.Optional;
  *   <li>Public endpoints (auth routes) are allowed through without a token.</li>
  *   <li>All other routes require a valid {@code Authorization: Bearer <token>} header.</li>
  *   <li>When a valid token is present, user identity ({@code X-User-Id},
- *       {@code X-User-Email}) is forwarded as headers to the downstream service.</li>
+ *       {@code X-User-Username}, {@code X-User-Email}, {@code X-User-Role})
+ *       is forwarded as headers to the downstream service.</li>
  *   <li>Invalid / missing tokens on protected routes return {@code 401 Unauthorized}.</li>
  * </ol>
  */
@@ -53,6 +54,9 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     /** Header through which the user ID is forwarded to downstream services. */
     private static final String USER_ID_HEADER = "X-User-Id";
+
+    /** Header through which the username is forwarded to downstream services. */
+    private static final String USER_USERNAME_HEADER = "X-User-Username";
 
     /** Header through which the user email is forwarded to downstream services. */
     private static final String USER_EMAIL_HEADER = "X-User-Email";
@@ -99,6 +103,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
         // -- Forward user identity to downstream services --------------------
         ServerHttpRequest mutatedRequest = request.mutate()
                 .header(USER_ID_HEADER, jwtUtil.getUserId(claims).map(String::valueOf).orElse(""))
+                .header(USER_USERNAME_HEADER, jwtUtil.getUsername(claims).orElse(""))
                 .header(USER_EMAIL_HEADER, jwtUtil.getEmail(claims).orElse(""))
                 .header(USER_ROLE_HEADER, jwtUtil.getRole(claims).orElse(""))
                 .build();

@@ -2,8 +2,6 @@ package com.cloudnest.user.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
-import jakarta.persistence.GeneratedValue;
-import jakarta.persistence.GenerationType;
 import jakarta.persistence.Id;
 import jakarta.persistence.PrePersist;
 import jakarta.persistence.PreUpdate;
@@ -32,8 +30,15 @@ import java.time.LocalDateTime;
 @Builder
 public class User {
 
+    /**
+     * Profile primary key.
+     * <p>
+     * Caller-assigned: the Auth Service provisions profiles with the SAME
+     * numeric ID it generated in {@code auth_db.user_credentials} so that
+     * the shared identity contract ({@code X-User-Id}) resolves across
+     * services.
+     */
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
     @Column(nullable = false, unique = true, length = 50)

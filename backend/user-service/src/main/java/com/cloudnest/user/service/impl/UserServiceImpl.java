@@ -1,5 +1,6 @@
 package com.cloudnest.user.service.impl;
 
+import com.cloudnest.user.dto.CreateProfileRequest;
 import com.cloudnest.user.dto.UpdateProfileRequest;
 import com.cloudnest.user.dto.UserProfileResponse;
 import com.cloudnest.user.entity.User;
@@ -9,6 +10,7 @@ import com.cloudnest.user.mapper.UserMapper;
 import com.cloudnest.user.repository.UserRepository;
 import com.cloudnest.user.service.UserService;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -31,15 +33,83 @@ public class UserServiceImpl implements UserService {
     }
 
     /**
-     * Retrieves the profile of the currently authenticated user.
+     * Creates a user profile using the Auth Service's numeric user ID.
+     * <p>
+     * Idempotent: if a profile with the given ID already exists it is
+     * returned unchanged. Duplicate username/email on a different ID are
+     * rejected so retried provisioning can never create duplicates.
      */
     @Override
-    @Transactional(readOnly = true)
-    public UserProfileResponse getCurrentUser(Long userId) {
+    @Transactional
+    public UserProfileResponse createProfile(CreateProfileRequest request) {
+        log.info("Provisioning profile: userId={}, username={}, email={}",
+                request.getId(), request.getUsername(), request.getEmail());
+
+        // -- Idempotent: profile already exists --------------------------------
+        if (userRepository.existsById(request.getId())) {
+            User existing = userRepository.findById(request.getId()).orElseThrow();
+            log.info("Profile already exists for userId={} — returning existing", request.getId());
+            return UserMapper.toProfileResponse(existing);
+        }
+
+        // -- Uniqueness guards (retry / partial-write safety) ------------------
+        if (userRepository.existsByUsername(request.getUsername())) {
+            log.warn("Provisioning failed: username '{}' already in use", request.getUsername());
+            throw new DuplicateResourceException("Username '" + request.getUsername() + "' is already in use");
+        }
+        if (userRepository.existsByEmail(request.getEmail())) {
+            log.warn("Provisioning failed: email '{}' already in use", request.getEmail());
+            throw new DuplicateResourceException("Email '" + request.getEmail() + "' is already in use");
+        }
+
+        User user = new User();
+        UserMapper.applyCreate(user, request);
+        try {
+            user = userRepository.save(user);
+        } catch (DataIntegrityViolationException e) {
+            // Race: a concurrent provisioning call created this profile (or a
+            // conflicting username/email) between our check and insert. Fall
+            // back to the existing row so retries stay idempotent.
+            log.warn("Provisioning race detected for userId={} — returning existing profile", request.getId());
+            return userRepository.findById(request.getId())
+                    .map(UserMapper::toProfileResponse)
+                    .orElseThrow(() -> e);
+        }
+
+        log.info("User profile provisioned successfully: userId={}, username={}",
+                user.getId(), user.getUsername());
+        return UserMapper.toProfileResponse(user);
+    }
+
+    /**
+     * Retrieves the profile of the currently authenticated user, lazily
+     * creating it from the forwarded identity headers when it is missing
+     * (self-healing). Existing profiles are returned untouched.
+     */
+    @Override
+    @Transactional
+    public UserProfileResponse getOrCreateCurrentUser(Long userId, String username, String email, String role) {
         log.debug("Fetching current user profile: userId={}", userId);
 
-        User user = findUserById(userId);
-        return UserMapper.toProfileResponse(user);
+        return userRepository.findById(userId)
+                .map(UserMapper::toProfileResponse)
+                .orElseGet(() -> {
+                    if (username == null || username.isBlank() || email == null || email.isBlank()) {
+                        log.warn("Profile missing for userId={} and identity headers incomplete — cannot self-heal", userId);
+                        throw new ResourceNotFoundException("User not found with id: " + userId);
+                    }
+
+                    log.warn("Profile missing for userId={} — self-healing from forwarded identity (username={})",
+                            userId, username);
+                    // Reuses createProfile() so the self-heal path gets the same
+                    // idempotency, uniqueness guards and race handling.
+                    return createProfile(CreateProfileRequest.builder()
+                            .id(userId)
+                            .username(username)
+                            .email(email)
+                            .role(role == null || role.isBlank() ? "ROLE_USER" : role)
+                            .build());
+                });
     }
 
     /**

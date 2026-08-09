@@ -1,5 +1,6 @@
 package com.cloudnest.user.mapper;
 
+import com.cloudnest.user.dto.CreateProfileRequest;
 import com.cloudnest.user.dto.UpdateProfileRequest;
 import com.cloudnest.user.dto.UserProfileResponse;
 import com.cloudnest.user.entity.User;
@@ -33,6 +34,22 @@ public final class UserMapper {
                 .createdAt(user.getCreatedAt())
                 .updatedAt(user.getUpdatedAt())
                 .build();
+    }
+
+    /**
+     * Applies provisioning fields from a {@link CreateProfileRequest} to a new
+     * {@link User} entity. The Auth Service's numeric user ID is persisted as
+     * the profile primary key, and the profile starts enabled.
+     *
+     * @param user    the user entity to populate (must be a new instance)
+     * @param request the provisioning payload
+     */
+    public static void applyCreate(User user, CreateProfileRequest request) {
+        user.setId(request.getId());
+        user.setUsername(request.getUsername());
+        user.setEmail(request.getEmail());
+        user.setRole(request.getRole());
+        user.setEnabled(true);
     }
 
     /**

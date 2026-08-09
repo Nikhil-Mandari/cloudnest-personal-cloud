@@ -116,6 +116,13 @@ public class JwtUtil {
     }
 
     /**
+     * Extracts the {@code username} claim (String) from a validated token.
+     */
+    public Optional<String> getUsername(Claims claims) {
+        return Optional.ofNullable(claims.get("username", String.class));
+    }
+
+    /**
      * Extracts the {@code email} claim (String) from a validated token.
      */
     public Optional<String> getEmail(Claims claims) {
