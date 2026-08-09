@@ -1,10 +1,10 @@
 /**
  * Barrel export for all domain types.
  *
- * NOTE: minimal reconstruction — exports only the type modules present on
- * this branch (api / auth / user / folder / explorer / file / fileAdvanced /
- * share / notification). The remaining domain type module (admin) is added
- * incrementally when its slice lands.
+ * NOTE: minimal reconstruction — exports the type modules present on this
+ * branch. All recovery domain type modules (api / auth / user / folder /
+ * explorer / file / fileAdvanced / share / notification / admin) are now
+ * exported — the barrel is complete.
  */
 export type { ApiErrorResponse, ApiResponse, PaginatedResponse } from './api.types';
 export type {
@@ -89,3 +89,15 @@ export type {
   VerifySharePasswordRequest,
 } from './share.types';
 export type { AppNotification, NotificationType } from './notification.types';
+export type {
+  AdminAuditLogs,
+  AdminPagedUsers,
+  AdminSecurityOverview,
+  AdminStorageOverview,
+  AdminTab,
+  AdminUserCredential,
+  AdminUserSummary,
+  MinioStatus,
+  ServiceHealth,
+  SystemHealth,
+} from './admin.types';
