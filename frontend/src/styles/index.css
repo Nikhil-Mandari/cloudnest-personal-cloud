@@ -59,3 +59,17 @@
 .dark ::-webkit-scrollbar-thumb:hover {
   background-color: rgb(75 85 99);
 }
+
+/* Brand pulse for freshly uploaded files (tile / row highlight) */
+@keyframes file-highlight-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(99 102 241 / 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgb(99 102 241 / 0.5);
+  }
+}
+.file-highlight {
+  animation: file-highlight-pulse 0.85s ease-in-out 3;
+}
