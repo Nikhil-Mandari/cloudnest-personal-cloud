@@ -82,10 +82,10 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Long
     /**
      * Finds all file metadata records within a specific folder.
      *
-     * @param folderId the ID of the folder
+     * @param folderId the folder UUID (matches {@link FileMetadata#folderId})
      * @return a list of file metadata records in the specified folder
      */
-    List<FileMetadata> findByFolderId(Long folderId);
+    List<FileMetadata> findByFolderId(String folderId);
 
     /**
      * Checks whether a stored file name is already taken.
