@@ -11,6 +11,11 @@ spring:
     password: ${FILE_DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
 # ── MinIO Object Storage Configuration ──────────────────────
 # Binary file content lives in MinIO; metadata lives in MySQL.
 # Credentials are supplied via environment variables (see docker-compose.yml).
@@ -21,12 +26,6 @@ minio:
   bucket-name: ${MINIO_BUCKET_NAME:cloudnest-files}
   secure: ${MINIO_SECURE:false}
   max-file-size: ${MINIO_MAX_FILE_SIZE:104857600}  # 100 MB
-
-spring:
-  servlet:
-    multipart:
-      max-file-size: 100MB
-      max-request-size: 100MB
 
 eureka:
   instance:
