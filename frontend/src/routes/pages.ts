@@ -16,6 +16,9 @@ export const VerifyOtpPage = lazy(() =>
 export const ForgotPasswordPage = lazy(() =>
   import('@/pages/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
 );
+export const PublicSharePage = lazy(() =>
+  import('@/pages/share/PublicSharePage').then((m) => ({ default: m.PublicSharePage })),
+);
 export const DashboardPage = lazy(() =>
   import('@/pages/dashboard/DashboardPage').then((m) => ({ default: m.DashboardPage })),
 );
@@ -45,6 +48,9 @@ export const AuditLogsPage = lazy(() =>
 );
 export const SecurityPage = lazy(() =>
   import('@/pages/security/SecurityPage').then((m) => ({ default: m.SecurityPage })),
+);
+export const AboutPage = lazy(() =>
+  import('@/pages/about/AboutPage').then((m) => ({ default: m.AboutPage })),
 );
 export const NotificationsPage = lazy(() =>
   import('@/pages/notifications/NotificationsPage').then((m) => ({ default: m.NotificationsPage })),

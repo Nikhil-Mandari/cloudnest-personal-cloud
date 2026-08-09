@@ -6,6 +6,7 @@ import { DashboardLayout } from '@/layouts/DashboardLayout';
 import { NotFoundPage } from '@/pages/NotFoundPage';
 import { GuestRoute } from './GuestRoute';
 import {
+  AboutPage,
   AnalyticsPage,
   AuditLogsPage,
   DashboardPage,
@@ -15,6 +16,7 @@ import {
   LoginPage,
   NotificationsPage,
   ProfilePage,
+  PublicSharePage,
   RegisterPage,
   SecurityPage,
   SettingsPage,
@@ -26,6 +28,12 @@ import { ProtectedRoute } from './ProtectedRoute';
 
 export const router = createBrowserRouter([
   { path: APP_ROUTES.home, element: <Navigate to={APP_ROUTES.dashboard} replace /> },
+
+  {
+    // Public share-link browse page — open to everyone, no auth.
+    path: APP_ROUTES.publicShare(':token'),
+    element: <PublicSharePage />,
+  },
 
   {
     // Public auth pages — redirect to /dashboard when already signed in.
@@ -61,6 +69,7 @@ export const router = createBrowserRouter([
           { path: APP_ROUTES.analytics, element: <AnalyticsPage /> },
           { path: APP_ROUTES.auditLogs, element: <AuditLogsPage /> },
           { path: APP_ROUTES.security, element: <SecurityPage /> },
+          { path: APP_ROUTES.about, element: <AboutPage /> },
         ],
       },
     ],
