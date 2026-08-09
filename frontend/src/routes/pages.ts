@@ -31,6 +31,9 @@ export const FoldersPage = lazy(() =>
 export const SharedPage = lazy(() =>
   import('@/pages/share/SharedPage').then((m) => ({ default: m.SharedPage })),
 );
+export const MySharesPage = lazy(() =>
+  import('@/pages/share/MySharesPage').then((m) => ({ default: m.MySharesPage })),
+);
 export const TrashPage = lazy(() =>
   import('@/pages/trash/TrashPage').then((m) => ({ default: m.TrashPage })),
 );
