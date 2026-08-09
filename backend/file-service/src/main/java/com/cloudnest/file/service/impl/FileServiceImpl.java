@@ -310,6 +310,22 @@ public class FileServiceImpl implements FileService {
         return fileMapper.toFileResponse(saved);
     }
 
+    /**
+     * Retrieves all soft-deleted (trashed) file metadata records for an owner.
+     * Only records with {@code DELETED} status are returned.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<FileMetadataResponse> getTrashFiles(Long ownerId) {
+        log.debug("Fetching trashed files for ownerId={}", ownerId);
+
+        return fileMetadataRepository.findByOwnerId(ownerId)
+                .stream()
+                .filter(file -> file.getStatus() == FileStatus.DELETED)
+                .map(fileMapper::toMetadataResponse)
+                .collect(Collectors.toList());
+    }
+
     // ─────────────────────────────────────────────────────────────────────────
     // Download & Preview
     // ─────────────────────────────────────────────────────────────────────────

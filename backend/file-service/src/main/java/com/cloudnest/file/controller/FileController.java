@@ -222,6 +222,37 @@ public class FileController {
     }
 
     /**
+     * Lists all soft-deleted (trashed) file metadata records for the
+     * authenticated user.
+     */
+    @Operation(summary = "List trashed files",
+            description = "Returns all soft-deleted file metadata records owned by the authenticated user " +
+                    "(files that were moved to the trash).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Trashed files retrieved successfully"),
+            @ApiResponse(responseCode = "401", description = "Missing user identity"),
+            @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
+    @GetMapping("/trash")
+    public ResponseEntity<StandardResponse<List<FileMetadataResponse>>> listTrashFiles(
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("GET /api/files/trash - userId={}", userIdHeader);
+
+        List<FileMetadataResponse> files = fileService.getTrashFiles(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<List<FileMetadataResponse>>builder()
+                        .success(true)
+                        .message("Trashed files retrieved successfully")
+                        .data(files)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
      * Marks (or unmarks) a file as favorite.
      */
     @Operation(summary = "Mark / unmark a file as favorite",

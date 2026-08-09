@@ -100,6 +100,14 @@ public interface FileService {
     FileResponse restoreFile(Long id, Long ownerId);
 
     /**
+     * Retrieves all soft-deleted (trashed) file metadata records for an owner.
+     *
+     * @param ownerId the ID of the file owner
+     * @return a list of lightweight file metadata responses
+     */
+    List<FileMetadataResponse> getTrashFiles(Long ownerId);
+
+    /**
      * Streams a file's binary content from MinIO for download.
      *
      * @param id      the internal primary key of the file record
