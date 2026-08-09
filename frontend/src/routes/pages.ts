@@ -37,6 +37,9 @@ export const ProfilePage = lazy(() =>
 export const SettingsPage = lazy(() =>
   import('@/pages/settings/SettingsPage').then((m) => ({ default: m.SettingsPage })),
 );
+export const SecurityPage = lazy(() =>
+  import('@/pages/security/SecurityPage').then((m) => ({ default: m.SecurityPage })),
+);
 export const NotificationsPage = lazy(() =>
   import('@/pages/notifications/NotificationsPage').then((m) => ({ default: m.NotificationsPage })),
 );
