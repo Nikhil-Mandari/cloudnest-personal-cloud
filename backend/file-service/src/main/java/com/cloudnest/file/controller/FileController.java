@@ -490,22 +490,24 @@ public class FileController {
     }
 
     /**
-     * Hard-deletes a file: removes the object from MinIO and deletes the
-     * metadata row from MySQL.
+     * Moves a file to the trash (soft delete). The metadata status is set to
+     * {@code DELETED}; the MinIO object is retained so the file can be restored
+     * from the trash.
      *
      * @param id           the internal primary key of the file record
      * @param userIdHeader the authenticated user's ID
      * @param httpRequest  the current HTTP request (for building response path)
      * @return 200 OK confirming the deletion
      */
-    @Operation(summary = "Delete a file",
-            description = "Permanently deletes a file: removes the object from MinIO and deletes the " +
-                    "metadata row from MySQL. If the MinIO deletion fails, nothing is deleted.")
+    @Operation(summary = "Move a file to the trash",
+            description = "Soft-deletes a file: its status is set to DELETED and the MinIO object is " +
+                    "retained so the file can be restored from the trash.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "File deleted successfully"),
+            @ApiResponse(responseCode = "200", description = "File moved to trash successfully"),
+            @ApiResponse(responseCode = "400", description = "File is already in the trash"),
             @ApiResponse(responseCode = "403", description = "File belongs to another user"),
             @ApiResponse(responseCode = "404", description = "File not found"),
-            @ApiResponse(responseCode = "500", description = "MinIO failure")
+            @ApiResponse(responseCode = "500", description = "Unexpected server error")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<StandardResponse<Void>> deleteFile(
@@ -522,7 +524,79 @@ public class FileController {
         return ResponseEntity.ok(
                 StandardResponse.<Void>builder()
                         .success(true)
-                        .message("File deleted successfully")
+                        .message("File moved to trash")
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Permanently deletes a trashed file: removes the object from MinIO and
+     * deletes the metadata row from MySQL. This cannot be undone.
+     *
+     * @param id           the internal primary key of the file record
+     * @param userIdHeader the authenticated user's ID
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK confirming the deletion
+     */
+    @Operation(summary = "Permanently delete a trashed file",
+            description = "Permanently removes a trashed file: the MinIO object is deleted and the " +
+                    "metadata row is removed from MySQL. This cannot be undone.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "File permanently deleted"),
+            @ApiResponse(responseCode = "400", description = "File is not in the trash"),
+            @ApiResponse(responseCode = "403", description = "File belongs to another user"),
+            @ApiResponse(responseCode = "404", description = "File not found"),
+            @ApiResponse(responseCode = "500", description = "MinIO failure")
+    })
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<StandardResponse<Void>> permanentlyDeleteFile(
+            @Parameter(description = "Internal file ID", example = "1")
+            @PathVariable Long id,
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("DELETE /api/files/{}/permanent - userId={}", id, userIdHeader);
+
+        fileService.permanentlyDeleteFile(id, userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<Void>builder()
+                        .success(true)
+                        .message("File permanently deleted")
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Permanently deletes every trashed file owned by the authenticated user.
+     *
+     * @param userIdHeader the authenticated user's ID
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK confirming the operation
+     */
+    @Operation(summary = "Empty the trash",
+            description = "Permanently deletes every trashed file owned by the authenticated user. " +
+                    "This cannot be undone.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Trash emptied successfully"),
+            @ApiResponse(responseCode = "401", description = "Missing user identity"),
+            @ApiResponse(responseCode = "500", description = "MinIO or database failure")
+    })
+    @DeleteMapping("/trash")
+    public ResponseEntity<StandardResponse<Void>> emptyTrash(
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("DELETE /api/files/trash - userId={}", userIdHeader);
+
+        fileService.emptyTrash(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<Void>builder()
+                        .success(true)
+                        .message("Trash emptied successfully")
                         .path(httpRequest.getRequestURI())
                         .build());
     }

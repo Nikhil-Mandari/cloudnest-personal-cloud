@@ -81,8 +81,9 @@ public interface FileService {
     FileResponse moveFile(Long id, String newFolderId, Long ownerId);
 
     /**
-     * Hard-deletes a file: removes the object from MinIO and deletes the
-     * metadata row from MySQL. On MinIO failure nothing is deleted (rollback).
+     * Soft-deletes a file by moving it to the trash: the metadata status is set
+     * to {@code DELETED} and the MinIO object is retained so the file can be
+     * restored from the trash.
      *
      * @param id      the internal primary key of the file record
      * @param ownerId the authenticated user's ID
@@ -90,7 +91,7 @@ public interface FileService {
     void deleteFile(Long id, Long ownerId);
 
     /**
-     * Restores a soft-deleted (legacy) file record by setting its status back
+     * Restores a soft-deleted (trashed) file record by setting its status back
      * to {@code ACTIVE}.
      *
      * @param id      the internal primary key of the file record
@@ -106,6 +107,25 @@ public interface FileService {
      * @return a list of lightweight file metadata responses
      */
     List<FileMetadataResponse> getTrashFiles(Long ownerId);
+
+    /**
+     * Permanently deletes a trashed file: removes the object from MinIO and
+     * deletes the metadata row from MySQL. Only files currently in the trash
+     * can be permanently deleted.
+     *
+     * @param id      the internal primary key of the file record
+     * @param ownerId the authenticated user's ID
+     */
+    void permanentlyDeleteFile(Long id, Long ownerId);
+
+    /**
+     * Permanently deletes every trashed file owned by the user (empty trash).
+     * A single failure is logged and skipped so the rest of the trash is still
+     * cleared.
+     *
+     * @param ownerId the authenticated user's ID
+     */
+    void emptyTrash(Long ownerId);
 
     /**
      * Streams a file's binary content from MinIO for download.

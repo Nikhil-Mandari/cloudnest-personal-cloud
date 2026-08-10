@@ -46,6 +46,14 @@ public interface FolderRepository extends JpaRepository<Folder, UUID> {
     List<Folder> findByOwnerIdAndDeletedFalse(Long ownerId);
 
     /**
+     * Finds all soft-deleted (trashed) folders belonging to a specific owner.
+     *
+     * @param ownerId the owner's UUID
+     * @return a list of trashed folders owned by the specified user
+     */
+    List<Folder> findByOwnerIdAndDeletedTrue(Long ownerId);
+
+    /**
      * Finds all folders with a specific parent folder ID (including deleted).
      *
      * @param parentFolderId the parent folder's UUID

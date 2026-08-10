@@ -262,32 +262,34 @@ public class FileServiceImpl implements FileService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Delete (hard delete: MinIO object + MySQL row)
+    // Delete (soft delete: move to trash)
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Hard-deletes a file: removes the object from MinIO first, then deletes
-     * the metadata row from MySQL. If the MinIO deletion fails, nothing is
-     * deleted (rollback-safe).
+     * Soft-deletes a file by moving it to the trash: the metadata status is set
+     * to {@code DELETED} and the MinIO object is retained so the file can be
+     * restored from the trash.
      */
     @Override
     public void deleteFile(Long id, Long ownerId) {
-        log.debug("Hard-deleting file: id={}, ownerId={}", id, ownerId);
+        log.debug("Soft-deleting file: id={}, ownerId={}", id, ownerId);
 
         FileMetadata fileMetadata = findOwnedFile(id, ownerId);
 
-        // ── 1. Remove the object from MinIO ────────────────────────────────────
-        minioService.deleteObject(fileMetadata.getObjectName());
+        if (fileMetadata.getStatus() == FileStatus.DELETED) {
+            log.warn("File is already in the trash: id={}", id);
+            throw new BadRequestException("File is already in the trash");
+        }
 
-        // ── 2. Delete the metadata row from MySQL ──────────────────────────────
-        fileMetadataRepository.delete(fileMetadata);
+        fileMetadata.setStatus(FileStatus.DELETED);
+        FileMetadata saved = fileMetadataRepository.save(fileMetadata);
 
-        log.info("File deleted successfully: id={}, fileId={}, objectName={}",
-                id, fileMetadata.getFileId(), fileMetadata.getObjectName());
+        log.info("File moved to trash: id={}, fileId={}",
+                saved.getId(), saved.getFileId());
     }
 
     /**
-     * Restores a soft-deleted (legacy) file record by setting its status back
+     * Restores a soft-deleted (trashed) file record by setting its status back
      * to {@code ACTIVE}.
      */
     @Override
@@ -319,11 +321,64 @@ public class FileServiceImpl implements FileService {
     public List<FileMetadataResponse> getTrashFiles(Long ownerId) {
         log.debug("Fetching trashed files for ownerId={}", ownerId);
 
-        return fileMetadataRepository.findByOwnerId(ownerId)
+        return fileMetadataRepository.findByOwnerIdAndStatus(ownerId, FileStatus.DELETED)
                 .stream()
-                .filter(file -> file.getStatus() == FileStatus.DELETED)
                 .map(fileMapper::toMetadataResponse)
                 .collect(Collectors.toList());
+    }
+
+    /**
+     * Permanently deletes a trashed file: removes the object from MinIO first,
+     * then deletes the metadata row from MySQL. Only files that are currently
+     * in the trash can be permanently deleted.
+     */
+    @Override
+    public void permanentlyDeleteFile(Long id, Long ownerId) {
+        log.debug("Permanently deleting file: id={}, ownerId={}", id, ownerId);
+
+        FileMetadata fileMetadata = findOwnedFile(id, ownerId);
+
+        if (fileMetadata.getStatus() != FileStatus.DELETED) {
+            log.warn("File is not in the trash: id={}", id);
+            throw new BadRequestException("Only files in the trash can be permanently deleted");
+        }
+
+        // ── 1. Remove the object from MinIO ────────────────────────────────────
+        minioService.deleteObject(fileMetadata.getObjectName());
+
+        // ── 2. Delete the metadata row from MySQL ──────────────────────────────
+        fileMetadataRepository.delete(fileMetadata);
+
+        log.info("File permanently deleted: id={}, fileId={}, objectName={}",
+                id, fileMetadata.getFileId(), fileMetadata.getObjectName());
+    }
+
+    /**
+     * Permanently deletes every trashed file owned by the user (empty trash).
+     * A single failure is logged and skipped so the rest of the trash is still
+     * cleared.
+     */
+    @Override
+    public void emptyTrash(Long ownerId) {
+        log.debug("Emptying trash for ownerId={}", ownerId);
+
+        List<FileMetadata> trashFiles =
+                fileMetadataRepository.findByOwnerIdAndStatus(ownerId, FileStatus.DELETED);
+
+        int deleted = 0;
+        for (FileMetadata file : trashFiles) {
+            try {
+                minioService.deleteObject(file.getObjectName());
+                fileMetadataRepository.delete(file);
+                deleted++;
+            } catch (RuntimeException e) {
+                log.error("Failed to permanently delete file id={} while emptying trash: {}",
+                        file.getId(), e.getMessage());
+            }
+        }
+
+        log.info("Trash emptied: {} of {} file(s) permanently deleted for ownerId={}",
+                deleted, trashFiles.size(), ownerId);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
