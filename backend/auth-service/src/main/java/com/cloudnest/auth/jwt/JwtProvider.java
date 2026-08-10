@@ -52,19 +52,40 @@ public class JwtProvider {
      * @return a signed JWT string
      */
     public String generateToken(Long userId, String username, String email, String role) {
-        Date now = new Date();
-        Date expiry = new Date(now.getTime() + expirationMs);
+        return generateTokenWithExpiry(userId, username, email, role, expirationMs, null);
+    }
 
-        return Jwts.builder()
+    /**
+     * Generates a JWT with a custom expiry and an optional token-type claim
+     * (e.g. {@code PASSWORD_RESET}).
+     *
+     * @param userId     the user's unique identifier
+     * @param username   the user's username
+     * @param email      the user's email address
+     * @param role       the user's role
+     * @param expiryMs   custom lifetime in milliseconds
+     * @param tokenType  optional claim value for {@code type} (may be null)
+     * @return a signed JWT string
+     */
+    public String generateTokenWithExpiry(Long userId, String username, String email, String role,
+                                          long expiryMs, String tokenType) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + expiryMs);
+
+        var builder = Jwts.builder()
                 .subject(userId.toString())
                 .claim("userId", userId)
                 .claim("username", username)
                 .claim("email", email)
                 .claim("role", role)
                 .issuedAt(now)
-                .expiration(expiry)
-                .signWith(signingKey)
-                .compact();
+                .expiration(expiry);
+
+        if (tokenType != null) {
+            builder.claim("type", tokenType);
+        }
+
+        return builder.signWith(signingKey).compact();
     }
 
     /**

@@ -11,6 +11,27 @@ spring:
     password: ${AUTH_DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  mail:
+    # SMTP is optional. When not configured (empty host), the auth service
+    # runs in development mode and returns the OTP as `devOtp` in responses.
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
+
+# ── Transactional email (OTP delivery) ─────────────────────────
+app:
+  mail:
+    from: ${MAIL_FROM:noreply@cloudnest.app}
+    # `false` (default) = development mode: OTPs are returned as devOtp.
+    enabled: ${MAIL_ENABLED:false}
+
 eureka:
   instance:
     # Register with the container IP (required for Docker: hostname is an unresolvable container ID)
@@ -22,6 +43,12 @@ eureka:
     fetch-registry: true
 
 management:
+  health:
+    # Mail health is only meaningful when SMTP is configured; in dev mode
+    # (MAIL_ENABLED=false) the MailHealthIndicator would otherwise fail and
+    # drag the aggregate health to DOWN.
+    mail:
+      enabled: ${MAIL_ENABLED:false}
   endpoints:
     web:
       exposure:

@@ -1,50 +1,83 @@
 package com.cloudnest.auth.service.impl;
 
 import com.cloudnest.auth.dto.AuthResponse;
+import com.cloudnest.auth.dto.ForgotPasswordRequest;
 import com.cloudnest.auth.dto.LoginRequest;
+import com.cloudnest.auth.dto.LoginResponse;
+import com.cloudnest.auth.dto.OtpDispatchResponse;
 import com.cloudnest.auth.dto.RegisterRequest;
+import com.cloudnest.auth.dto.RegisterResponse;
+import com.cloudnest.auth.dto.ResetPasswordRequest;
+import com.cloudnest.auth.dto.ResetTokenResponse;
+import com.cloudnest.auth.entity.OtpVerification;
+import com.cloudnest.auth.entity.RefreshToken;
 import com.cloudnest.auth.entity.UserCredential;
 import com.cloudnest.auth.exception.DuplicateResourceException;
 import com.cloudnest.auth.jwt.JwtProvider;
 import com.cloudnest.auth.mapper.UserMapper;
+import com.cloudnest.auth.repository.RefreshTokenRepository;
 import com.cloudnest.auth.repository.UserCredentialRepository;
 import com.cloudnest.auth.service.AuthService;
+import com.cloudnest.auth.service.OtpService;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
+import java.time.LocalDateTime;
+import java.util.HexFormat;
+import java.util.List;
+import java.util.Optional;
+import java.util.UUID;
+
 /**
  * Implementation of the {@link AuthService} interface.
  * <p>
- * Handles user registration with duplicate validation, login with password
- * verification, and JWT token validation.
+ * Handles user registration with OTP email verification, password-based
+ * login, JWT token validation, refresh-token rotation, and password flows.
  */
 @Slf4j
 @Service
 public class AuthServiceImpl implements AuthService {
 
     private final UserCredentialRepository userRepository;
+    private final RefreshTokenRepository refreshTokenRepository;
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
+    private final OtpService otpService;
+
+    /** Refresh tokens live for 7 days. */
+    private static final long REFRESH_TOKEN_EXPIRY_MS = 7L * 24 * 60 * 60 * 1000;
+
+    /** Password-reset JWTs live for 15 minutes. */
+    private static final long RESET_TOKEN_EXPIRY_MS = 15L * 60 * 1000;
+
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     public AuthServiceImpl(UserCredentialRepository userRepository,
+                           RefreshTokenRepository refreshTokenRepository,
                            PasswordEncoder passwordEncoder,
-                           JwtProvider jwtProvider) {
+                           JwtProvider jwtProvider,
+                           OtpService otpService) {
         this.userRepository = userRepository;
+        this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtProvider = jwtProvider;
+        this.otpService = otpService;
     }
 
-    /**
-     * Registers a new user. Validates that the username and email are not already taken.
-     */
+    // ── Registration (OTP-verified) ─────────────────────────────────────────
+
     @Override
     @Transactional
-    public AuthResponse register(RegisterRequest request) {
+    public RegisterResponse register(RegisterRequest request) {
         log.debug("Registering new user: username={}, email={}", request.getUsername(), request.getEmail());
 
         // -- Check for duplicates ------------------------------------------------
@@ -58,30 +91,84 @@ public class AuthServiceImpl implements AuthService {
             throw new DuplicateResourceException("Email '" + request.getEmail() + "' is already registered");
         }
 
-        // -- Build and persist the user entity -----------------------------------
+        // -- Build and persist the user entity (disabled until OTP verified) -----
         UserCredential user = UserCredential.builder()
                 .username(request.getUsername())
                 .email(request.getEmail())
                 .password(passwordEncoder.encode(request.getPassword()))
                 .role("ROLE_USER")
-                .enabled(true)
+                .enabled(false)
                 .build();
 
         user = userRepository.save(user);
-        log.info("User registered successfully: id={}, username={}", user.getId(), user.getUsername());
+        log.info("User registered (pending verification): id={}, username={}", user.getId(), user.getUsername());
 
-        // -- Generate JWT -------------------------------------------------------
-        String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
+        // -- Generate and dispatch OTP -------------------------------------------
+        OtpDispatchResponse otpResponse = otpService.generateOtp(user.getEmail(), "REGISTRATION");
 
-        return UserMapper.toAuthResponse(user, token);
+        return RegisterResponse.builder()
+                .userId(user.getId())
+                .email(user.getEmail())
+                .message("Account created successfully. Please verify your email with the code sent.")
+                .devOtp(otpResponse.getDevOtp())
+                .resendAfterSeconds(otpResponse.getResendAfterSeconds())
+                .otpExpiryMinutes(otpResponse.getOtpExpiryMinutes())
+                .build();
     }
 
-    /**
-     * Authenticates a user by username/email and password.
-     */
     @Override
-    @Transactional(readOnly = true)
-    public AuthResponse login(LoginRequest request) {
+    @Transactional
+    public AuthResponse verifyRegistration(String email, String code) {
+        log.debug("Verifying registration OTP for email={}", email);
+
+        // Validate the OTP
+        OtpVerification otp = otpService.verifyOtp(email, code, "REGISTRATION")
+                .orElseThrow(() -> new IllegalArgumentException("Invalid or expired verification code. Please request a new code."));
+
+        // Find and enable the user
+        UserCredential user = userRepository.findByEmail(otp.getEmail())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found for email: " + otp.getEmail()));
+
+        user.setEnabled(true);
+        userRepository.save(user);
+
+        log.info("User enabled after OTP verification: id={}, username={}", user.getId(), user.getUsername());
+
+        // Generate JWT + refresh token
+        String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
+        String refreshToken = issueRefreshToken(user.getId());
+
+        return UserMapper.toAuthResponse(user, token, refreshToken);
+    }
+
+    @Override
+    @Transactional
+    public OtpDispatchResponse resendOtp(String email, String challengeToken) {
+        log.debug("Resending OTP for email={}, challengeToken={}", email, challengeToken);
+
+        // Verify the user exists
+        userRepository.findByEmail(email)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found for email: " + email));
+
+        // Challenge-bound flows (login / password-reset) reuse the SAME
+        // challenge token and preserve its stored purpose, so the frontend's
+        // stored challengeToken remains valid for verification.
+        if (challengeToken != null && !challengeToken.isBlank()) {
+            String purpose = otpService.findPurposeByChallengeToken(challengeToken)
+                    .orElseThrow(() -> new IllegalArgumentException(
+                            "This verification session has expired. Please start again."));
+            return otpService.generateOtpWithChallenge(email, purpose, challengeToken);
+        }
+
+        // Registration flow: no challenge token
+        return otpService.generateOtp(email, "REGISTRATION");
+    }
+
+    // ── Login (direct for existing users, OTP-based for new users) ───────────
+
+    @Override
+    @Transactional
+    public LoginResponse login(LoginRequest request) {
         log.debug("Login attempt: usernameOrEmail={}", request.getUsernameOrEmail());
 
         // -- Resolve user by username or email ------------------------------------
@@ -98,17 +185,212 @@ public class AuthServiceImpl implements AuthService {
             throw new BadCredentialsException("Invalid username/email or password");
         }
 
+        // -- Check if OTP verification is required (user not yet enabled) ---------
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
+            log.info("Login requires OTP verification: userId={}, email={}", user.getId(), user.getEmail());
+            String challengeToken = UUID.randomUUID().toString();
+
+            OtpDispatchResponse otpResponse = otpService.generateOtpWithChallenge(
+                    user.getEmail(), "LOGIN", challengeToken);
+
+            return LoginResponse.builder()
+                    .requiresOtp(true)
+                    .challengeToken(challengeToken)
+                    .userId(user.getId())
+                    .username(user.getUsername())
+                    .email(user.getEmail())
+                    .role(user.getRole())
+                    .devOtp(otpResponse.getDevOtp())
+                    .resendAfterSeconds(otpResponse.getResendAfterSeconds())
+                    .otpExpiryMinutes(otpResponse.getOtpExpiryMinutes())
+                    .build();
+        }
+
         log.info("User logged in successfully: id={}, username={}", user.getId(), user.getUsername());
 
-        // -- Generate JWT ---------------------------------------------------------
+        // -- Generate JWT + refresh token ----------------------------------------
         String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
+        String refreshToken = issueRefreshToken(user.getId());
 
-        return UserMapper.toAuthResponse(user, token);
+        return LoginResponse.builder()
+                .requiresOtp(false)
+                .token(token)
+                .refreshToken(refreshToken)
+                .userId(user.getId())
+                .username(user.getUsername())
+                .email(user.getEmail())
+                .role(user.getRole())
+                .build();
     }
 
-    /**
-     * Validates a JWT token and returns the associated user details.
-     */
+    @Override
+    @Transactional
+    public AuthResponse verifyLogin(String challengeToken, String code) {
+        log.debug("Verifying login OTP for challengeToken={}", challengeToken);
+
+        // Validate the OTP bound to the challenge
+        OtpVerification otp = otpService.verifyOtpWithChallenge(challengeToken, code)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid or expired verification code. Please sign in again."));
+
+        // Find the user
+        UserCredential user = userRepository.findByEmail(otp.getEmail())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found for email: " + otp.getEmail()));
+
+        // Enable the user if not yet enabled (registers after OTP login)
+        if (!Boolean.TRUE.equals(user.getEnabled())) {
+            user.setEnabled(true);
+            userRepository.save(user);
+            log.info("User enabled after login OTP verification: id={}", user.getId());
+        }
+
+        // Generate JWT + refresh token
+        String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
+        String refreshToken = issueRefreshToken(user.getId());
+
+        return UserMapper.toAuthResponse(user, token, refreshToken);
+    }
+
+    // ── Refresh-token rotation ───────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public AuthResponse refreshToken(String refreshToken) {
+        log.debug("Rotating refresh token");
+
+        RefreshToken stored = refreshTokenRepository.findByTokenHashAndRevokedFalse(hashToken(refreshToken))
+                .orElseThrow(() -> new BadCredentialsException("Invalid or expired refresh token"));
+
+        if (stored.getExpiresAt().isBefore(LocalDateTime.now())) {
+            stored.setRevoked(true);
+            refreshTokenRepository.save(stored);
+            throw new BadCredentialsException("Invalid or expired refresh token");
+        }
+
+        UserCredential user = userRepository.findById(stored.getUserId())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found for refresh token"));
+
+        // Rotate: revoke the presented token, issue a fresh pair
+        stored.setRevoked(true);
+        refreshTokenRepository.save(stored);
+
+        String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
+        String newRefreshToken = issueRefreshToken(user.getId());
+
+        log.info("Refresh token rotated for userId={}", user.getId());
+        return UserMapper.toAuthResponse(user, token, newRefreshToken);
+    }
+
+    @Override
+    @Transactional
+    public void logout(String refreshToken) {
+        if (refreshToken == null || refreshToken.isBlank()) {
+            return;
+        }
+        refreshTokenRepository.findByTokenHashAndRevokedFalse(hashToken(refreshToken))
+                .ifPresent(stored -> {
+                    stored.setRevoked(true);
+                    refreshTokenRepository.save(stored);
+                    log.info("Refresh token revoked (logout) for userId={}", stored.getUserId());
+                });
+    }
+
+    @Override
+    @Transactional
+    public void logoutAll(Long userId) {
+        List<RefreshToken> active = refreshTokenRepository.findByUserIdAndRevokedFalse(userId);
+        for (RefreshToken token : active) {
+            token.setRevoked(true);
+        }
+        refreshTokenRepository.saveAll(active);
+        log.info("All refresh tokens revoked for userId={}", userId);
+    }
+
+    // ── Password flows ───────────────────────────────────────────────────────
+
+    @Override
+    @Transactional
+    public OtpDispatchResponse forgotPassword(ForgotPasswordRequest request) {
+        log.debug("Forgot-password request for email={}", request.getEmail());
+
+        // Always return the same generic response whether or not the user exists,
+        // to avoid leaking which emails have accounts.
+        Optional<UserCredential> userOpt = userRepository.findByEmail(request.getEmail());
+        if (userOpt.isEmpty()) {
+            return OtpDispatchResponse.builder()
+                    .sent(false)
+                    .resendAfterSeconds(30)
+                    .otpExpiryMinutes(5)
+                    .build();
+        }
+
+        String challengeToken = UUID.randomUUID().toString();
+        return otpService.generateOtpWithChallenge(request.getEmail(), "PASSWORD_RESET", challengeToken);
+    }
+
+    @Override
+    @Transactional
+    public ResetTokenResponse verifyForgotPassword(String challengeToken, String code) {
+        log.debug("Verifying forgot-password OTP");
+
+        OtpVerification otp = otpService.verifyOtpWithChallenge(challengeToken, code)
+                .orElseThrow(() -> new IllegalArgumentException("Invalid or expired reset code. Please request a new code."));
+
+        UserCredential user = userRepository.findByEmail(otp.getEmail())
+                .orElseThrow(() -> new UsernameNotFoundException("User not found for email: " + otp.getEmail()));
+
+        // Short-lived JWT that only grants permission to reset the password
+        String resetToken = jwtProvider.generateTokenWithExpiry(
+                user.getId(), user.getUsername(), user.getEmail(), user.getRole(),
+                RESET_TOKEN_EXPIRY_MS, "PASSWORD_RESET");
+
+        log.info("Password-reset token issued for userId={}", user.getId());
+        return ResetTokenResponse.builder().resetToken(resetToken).build();
+    }
+
+    @Override
+    @Transactional
+    public void resetPassword(ResetPasswordRequest request) {
+        Claims claims = jwtProvider.validateToken(request.getResetToken())
+                .orElseThrow(() -> new BadCredentialsException("Invalid or expired reset token"));
+
+        if (!"PASSWORD_RESET".equals(claims.get("type", String.class))) {
+            throw new BadCredentialsException("Invalid reset token type");
+        }
+
+        Long userId = claims.get("userId", Long.class);
+        UserCredential user = userRepository.findById(userId)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found for reset token"));
+
+        user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        userRepository.save(user);
+
+        // Invalidate all existing refresh tokens for the user
+        logoutAll(userId);
+
+        log.info("Password reset completed for userId={}", userId);
+    }
+
+    @Override
+    @Transactional
+    public void changePassword(Long userId, String currentPassword, String newPassword) {
+        UserCredential user = userRepository.findById(userId)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+        if (!passwordEncoder.matches(currentPassword, user.getPassword())) {
+            throw new BadCredentialsException("Current password is incorrect");
+        }
+
+        user.setPassword(passwordEncoder.encode(newPassword));
+        userRepository.save(user);
+
+        // Invalidate existing refresh tokens so other sessions re-authenticate
+        logoutAll(userId);
+
+        log.info("Password changed for userId={}", userId);
+    }
+
+    // ── Token validation ─────────────────────────────────────────────────────
+
     @Override
     @Transactional(readOnly = true)
     public AuthResponse validateToken(String token) {
@@ -131,5 +413,44 @@ public class AuthServiceImpl implements AuthService {
         log.debug("Token validated successfully for user: id={}, username={}", user.getId(), user.getUsername());
 
         return UserMapper.toAuthResponse(user, token);
+    }
+
+    /** Hourly sweep of expired refresh tokens. */
+    @Scheduled(fixedDelay = 3600000)
+    @Transactional
+    public void cleanupExpiredRefreshTokens() {
+        refreshTokenRepository.deleteByExpiresAtBefore(LocalDateTime.now());
+        log.debug("Cleanup sweep completed for expired refresh tokens");
+    }
+
+    // ── Private helpers ──────────────────────────────────────────────────────
+
+    /**
+     * Issues a new opaque refresh token (raw value returned to the client,
+     * only its SHA-256 hash is persisted).
+     */
+    private String issueRefreshToken(Long userId) {
+        byte[] bytes = new byte[32];
+        RANDOM.nextBytes(bytes);
+        String rawToken = HexFormat.of().formatHex(bytes);
+
+        RefreshToken entity = RefreshToken.builder()
+                .userId(userId)
+                .tokenHash(hashToken(rawToken))
+                .expiresAt(LocalDateTime.now().plusSeconds(7L * 24 * 60 * 60))
+                .build();
+        refreshTokenRepository.save(entity);
+        return rawToken;
+    }
+
+    /** SHA-256 hash of a raw refresh token (never store plain text). */
+    private String hashToken(String rawToken) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(rawToken.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
     }
 }

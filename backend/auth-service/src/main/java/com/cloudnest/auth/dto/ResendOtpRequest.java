@@ -7,19 +7,18 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Response payload returned after successful authentication.
+ * Request payload for resending an OTP ({@code /api/auth/otp/resend}).
  */
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class AuthResponse {
+public class ResendOtpRequest {
 
-    private String token;
-    private String refreshToken;
-    private Long userId;
-    private String username;
+    /** Email address (registration / password-reset flow). */
     private String email;
-    private String role;
+
+    /** Challenge token (login / 2FA flow). */
+    private String challengeToken;
 }

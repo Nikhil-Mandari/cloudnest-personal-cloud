@@ -112,6 +112,25 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles requests that are too frequent (OTP resend cooldown).
+     */
+    @ExceptionHandler(RateLimitException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimit(
+            RateLimitException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.TOO_MANY_REQUESTS.value())
+                .error(HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(response);
+    }
+
+    /**
      * Handles illegal argument / bad request scenarios.
      */
     @ExceptionHandler(IllegalArgumentException.class)

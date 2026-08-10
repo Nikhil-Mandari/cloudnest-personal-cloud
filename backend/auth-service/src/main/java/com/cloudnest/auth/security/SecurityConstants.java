@@ -20,11 +20,16 @@ public final class SecurityConstants {
      */
     public static final String[] PUBLIC_PATHS = {
             "/api/auth/register",
+            "/api/auth/register/verify",
             "/api/auth/signup",
             "/api/auth/login",
+            "/api/auth/login/verify",
             "/api/auth/refresh",
             "/api/auth/forgot-password",
+            "/api/auth/forgot-password/verify",
+            "/api/auth/forgot-password/reset",
             "/api/auth/reset-password",
+            "/api/auth/otp/resend",
             "/api/auth/otp-verification",
             "/actuator/**",
             "/v3/api-docs/**",

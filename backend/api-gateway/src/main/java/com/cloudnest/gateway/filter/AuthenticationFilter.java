@@ -39,10 +39,15 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     /** Paths that do NOT require authentication. */
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/auth/register",
+            "/api/auth/register/verify",
             "/api/auth/login",
+            "/api/auth/login/verify",
             "/api/auth/refresh",
             "/api/auth/forgot-password",
+            "/api/auth/forgot-password/verify",
+            "/api/auth/forgot-password/reset",
             "/api/auth/reset-password",
+            "/api/auth/otp/resend",
             "/api/shares/public/",
             "/actuator/",
             "/v3/api-docs",

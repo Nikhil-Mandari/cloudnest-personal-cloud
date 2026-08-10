@@ -1,5 +1,6 @@
 package com.cloudnest.auth.dto;
 
+import jakarta.validation.constraints.NotBlank;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
 import lombok.Getter;
@@ -7,19 +8,15 @@ import lombok.NoArgsConstructor;
 import lombok.Setter;
 
 /**
- * Response payload returned after successful authentication.
+ * Request payload for {@code POST /api/auth/refresh}.
  */
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class AuthResponse {
+public class RefreshTokenRequest {
 
-    private String token;
+    @NotBlank(message = "Refresh token is required")
     private String refreshToken;
-    private Long userId;
-    private String username;
-    private String email;
-    private String role;
 }
