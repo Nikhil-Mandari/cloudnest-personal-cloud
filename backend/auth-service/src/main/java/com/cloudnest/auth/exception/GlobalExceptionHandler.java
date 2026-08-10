@@ -74,7 +74,10 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Handles invalid credentials (wrong password during login).
+     * Handles invalid credentials (wrong password during login, invalid 2FA
+     * code, expired/invalid challenge or refresh tokens). The exception's own
+     * message is surfaced so 2FA failures show a meaningful message instead of
+     * the generic password error.
      */
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(
@@ -82,7 +85,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse response = ErrorResponse.builder()
                 .success(false)
-                .message("Invalid username/email or password")
+                .message(ex.getMessage())
                 .status(HttpStatus.UNAUTHORIZED.value())
                 .error(HttpStatus.UNAUTHORIZED.getReasonPhrase())
                 .path(request.getRequestURI())
