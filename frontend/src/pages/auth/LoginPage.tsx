@@ -2,6 +2,7 @@ import { useForm } from 'react-hook-form';
 import { Link, useLocation } from 'react-router-dom';
 import { Fingerprint, KeyRound, Mail } from 'lucide-react';
 
+import { SocialLoginButtons } from '@/components/auth/SocialLoginButtons';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
@@ -90,6 +91,8 @@ export function LoginPage() {
           Sign in
         </Button>
       </form>
+
+      <SocialLoginButtons />
 
       {passkeysSupported ? (
         <>

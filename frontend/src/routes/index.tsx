@@ -16,6 +16,7 @@ import {
   LoginPage,
   MySharesPage,
   NotificationsPage,
+  OAuthCallbackPage,
   ProfilePage,
   PublicSharePage,
   RegisterPage,
@@ -34,6 +35,13 @@ export const router = createBrowserRouter([
     // Public share-link browse page — open to everyone, no auth.
     path: APP_ROUTES.publicShare(':token'),
     element: <PublicSharePage />,
+  },
+
+  {
+    // Social-login landing — receives the session tokens after Google/GitHub
+    // sign-in, then forwards to the dashboard (open to everyone, no auth).
+    path: APP_ROUTES.oauthCallback,
+    element: <OAuthCallbackPage />,
   },
 
   {

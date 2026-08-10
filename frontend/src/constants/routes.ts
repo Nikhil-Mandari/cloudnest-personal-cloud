@@ -8,6 +8,8 @@ export const APP_ROUTES = {
   register: '/register',
   verifyOtp: '/verify-otp',
   forgotPassword: '/forgot-password',
+  /** Landing page for the Google/GitHub social-login redirect. */
+  oauthCallback: '/oauth/callback',
   dashboard: '/dashboard',
   files: '/files',
   folders: '/folders',

@@ -32,6 +32,31 @@ app:
     # `false` (default) = development mode: OTPs are returned as devOtp.
     enabled: ${MAIL_ENABLED:false}
 
+# ── Social login (Google / GitHub OAuth2) ────────────────────
+# Client credentials come from environment variables. A provider with empty
+# client-id/secret is reported as unconfigured (authorize returns 503) and
+# the frontend hides its button.
+oauth:
+  # Where the browser is redirected after a successful social sign-in.
+  frontend-base-url: ${OAUTH_FRONTEND_BASE_URL:http://localhost:5173}
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/auth/oauth/google/callback}
+    authorize-url: ${GOOGLE_AUTH_URL:https://accounts.google.com/o/oauth2/v2/auth}
+    token-url: ${GOOGLE_TOKEN_URL:https://oauth2.googleapis.com/token}
+    user-info-url: ${GOOGLE_USERINFO_URL:https://www.googleapis.com/oauth2/v3/userinfo}
+    scope: openid email profile
+  github:
+    client-id: ${GITHUB_CLIENT_ID:}
+    client-secret: ${GITHUB_CLIENT_SECRET:}
+    redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:8080/api/auth/oauth/github/callback}
+    authorize-url: ${GITHUB_AUTH_URL:https://github.com/login/oauth/authorize}
+    token-url: ${GITHUB_TOKEN_URL:https://github.com/login/oauth/access_token}
+    user-info-url: ${GITHUB_USERINFO_URL:https://api.github.com/user}
+    emails-url: ${GITHUB_EMAILS_URL:https://api.github.com/user/emails}
+    scope: read:user user:email
+
 eureka:
   instance:
     # Register with the container IP (required for Docker: hostname is an unresolvable container ID)

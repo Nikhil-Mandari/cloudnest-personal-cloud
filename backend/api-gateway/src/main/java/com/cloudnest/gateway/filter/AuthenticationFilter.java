@@ -48,6 +48,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             "/api/auth/forgot-password/reset",
             "/api/auth/reset-password",
             "/api/auth/otp/resend",
+            "/api/auth/oauth/",
             "/api/shares/public/",
             "/actuator/",
             "/v3/api-docs",

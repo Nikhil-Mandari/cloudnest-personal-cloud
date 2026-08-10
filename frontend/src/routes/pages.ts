@@ -16,6 +16,9 @@ export const VerifyOtpPage = lazy(() =>
 export const ForgotPasswordPage = lazy(() =>
   import('@/pages/auth/ForgotPasswordPage').then((m) => ({ default: m.ForgotPasswordPage })),
 );
+export const OAuthCallbackPage = lazy(() =>
+  import('@/pages/auth/OAuthCallbackPage').then((m) => ({ default: m.OAuthCallbackPage })),
+);
 export const PublicSharePage = lazy(() =>
   import('@/pages/share/PublicSharePage').then((m) => ({ default: m.PublicSharePage })),
 );

@@ -15,6 +15,11 @@ export const API_ENDPOINTS = {
     refresh: '/auth/refresh',
     logout: '/auth/logout',
     logoutAll: '/auth/logout-all',
+    // ── Social login (Google / GitHub OAuth) ──────────────────────────────
+    oauth: {
+      status: (provider: 'google' | 'github') => `/auth/oauth/${provider}/status`,
+      authorize: (provider: 'google' | 'github') => `/auth/oauth/${provider}/authorize`,
+    },
     changePassword: '/auth/change-password',
     sessions: '/auth/sessions',
     session: (sessionId: string) => `/auth/sessions/${sessionId}`,

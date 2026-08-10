@@ -31,6 +31,7 @@ public final class SecurityConstants {
             "/api/auth/reset-password",
             "/api/auth/otp/resend",
             "/api/auth/otp-verification",
+            "/api/auth/oauth/**",
             "/actuator/**",
             "/v3/api-docs/**",
             "/swagger-ui/**",
