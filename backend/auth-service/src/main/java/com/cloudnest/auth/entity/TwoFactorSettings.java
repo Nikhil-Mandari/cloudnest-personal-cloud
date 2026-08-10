@@ -17,50 +17,41 @@ import lombok.Setter;
 import java.time.LocalDateTime;
 
 /**
- * Represents a registered user credential record.
+ * Per-user two-factor authentication (TOTP) settings.
  * <p>
- * Stores the identity and authentication details for every user
- * in the CloudNest platform. Passwords are stored as BCrypt hashes.
+ * The TOTP shared secret is stored base32-encoded. Enabling 2FA additionally
+ * generates one-time backup codes (stored separately, hashed).
  */
 @Entity
-@Table(name = "user_credentials")
+@Table(name = "two_factor_settings")
 @Getter
 @Setter
 @NoArgsConstructor
 @AllArgsConstructor
 @Builder
-public class UserCredential {
+public class TwoFactorSettings {
 
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(nullable = false, unique = true, length = 50)
-    private String username;
+    /** Owner (matches {@code auth_db.user_credentials.id}). */
+    @Column(name = "user_id", nullable = false, unique = true)
+    private Long userId;
 
-    @Column(nullable = false, unique = true, length = 100)
-    private String email;
-
-    @Column(nullable = false)
-    private String password;
-
-    @Column(nullable = false, length = 20)
-    @Builder.Default
-    private String role = "ROLE_USER";
+    /** Base32 TOTP shared secret. */
+    @Column(nullable = false, columnDefinition = "TEXT")
+    private String secret;
 
     @Column(nullable = false)
     @Builder.Default
-    private Boolean enabled = true;
+    private Boolean enabled = false;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private LocalDateTime createdAt;
 
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
-
-    /** When the password was last changed (null for accounts that never changed it). */
-    @Column(name = "password_changed_at")
-    private LocalDateTime passwordChangedAt;
 
     @PrePersist
     protected void onCreate() {

@@ -1,6 +1,7 @@
 package com.cloudnest.auth.service.impl;
 
 import com.cloudnest.auth.dto.AuthResponse;
+import com.cloudnest.auth.dto.DeviceInfo;
 import com.cloudnest.auth.dto.ForgotPasswordRequest;
 import com.cloudnest.auth.dto.LoginRequest;
 import com.cloudnest.auth.dto.LoginResponse;
@@ -19,6 +20,9 @@ import com.cloudnest.auth.repository.RefreshTokenRepository;
 import com.cloudnest.auth.repository.UserCredentialRepository;
 import com.cloudnest.auth.service.AuthService;
 import com.cloudnest.auth.service.OtpService;
+import com.cloudnest.auth.service.SecurityService;
+import com.cloudnest.auth.service.TokenIssuer;
+import com.cloudnest.auth.service.TwoFactorService;
 import io.jsonwebtoken.Claims;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -28,11 +32,7 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.SecureRandom;
 import java.time.LocalDateTime;
-import java.util.HexFormat;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -41,7 +41,9 @@ import java.util.UUID;
  * Implementation of the {@link AuthService} interface.
  * <p>
  * Handles user registration with OTP email verification, password-based
- * login, JWT token validation, refresh-token rotation, and password flows.
+ * login (with optional TOTP / backup-code 2FA), JWT token validation,
+ * refresh-token rotation, and password flows. Security-relevant events are
+ * recorded to the login-history and security-log tables.
  */
 @Slf4j
 @Service
@@ -52,25 +54,29 @@ public class AuthServiceImpl implements AuthService {
     private final PasswordEncoder passwordEncoder;
     private final JwtProvider jwtProvider;
     private final OtpService otpService;
+    private final TwoFactorService twoFactorService;
+    private final SecurityService securityService;
+    private final TokenIssuer tokenIssuer;
 
-    /** Refresh tokens live for 7 days. */
-    private static final long REFRESH_TOKEN_EXPIRY_MS = 7L * 24 * 60 * 60 * 1000;
-
-    /** Password-reset JWTs live for 15 minutes. */
-    private static final long RESET_TOKEN_EXPIRY_MS = 15L * 60 * 1000;
-
-    private static final SecureRandom RANDOM = new SecureRandom();
+    /** Password-reset and 2FA-login challenge JWTs live for 15 minutes. */
+    private static final long CHALLENGE_TOKEN_EXPIRY_MS = 15L * 60 * 1000;
 
     public AuthServiceImpl(UserCredentialRepository userRepository,
                            RefreshTokenRepository refreshTokenRepository,
                            PasswordEncoder passwordEncoder,
                            JwtProvider jwtProvider,
-                           OtpService otpService) {
+                           OtpService otpService,
+                           TwoFactorService twoFactorService,
+                           SecurityService securityService,
+                           TokenIssuer tokenIssuer) {
         this.userRepository = userRepository;
         this.refreshTokenRepository = refreshTokenRepository;
         this.passwordEncoder = passwordEncoder;
         this.jwtProvider = jwtProvider;
         this.otpService = otpService;
+        this.twoFactorService = twoFactorService;
+        this.securityService = securityService;
+        this.tokenIssuer = tokenIssuer;
     }
 
     // ── Registration (OTP-verified) ─────────────────────────────────────────
@@ -118,7 +124,7 @@ public class AuthServiceImpl implements AuthService {
 
     @Override
     @Transactional
-    public AuthResponse verifyRegistration(String email, String code) {
+    public AuthResponse verifyRegistration(String email, String code, boolean rememberDevice, DeviceInfo device) {
         log.debug("Verifying registration OTP for email={}", email);
 
         // Validate the OTP
@@ -134,11 +140,13 @@ public class AuthServiceImpl implements AuthService {
 
         log.info("User enabled after OTP verification: id={}, username={}", user.getId(), user.getUsername());
 
-        // Generate JWT + refresh token
-        String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
-        String refreshToken = issueRefreshToken(user.getId());
-
-        return UserMapper.toAuthResponse(user, token, refreshToken);
+        AuthResponse authResponse = tokenIssuer.issue(user, device);
+        securityService.recordLoginSuccess(user.getId(), device);
+        securityService.logEvent(user.getId(), "ACCOUNT_ACTIVATED", "Account activated after email verification");
+        if (rememberDevice) {
+            securityService.trustDevice(user.getId(), device);
+        }
+        return authResponse;
     }
 
     @Override
@@ -164,11 +172,11 @@ public class AuthServiceImpl implements AuthService {
         return otpService.generateOtp(email, "REGISTRATION");
     }
 
-    // ── Login (direct for existing users, OTP-based for new users) ───────────
+    // ── Login (password + optional 2FA) ─────────────────────────────────────
 
     @Override
     @Transactional
-    public LoginResponse login(LoginRequest request) {
+    public LoginResponse login(LoginRequest request, DeviceInfo device) {
         log.debug("Login attempt: usernameOrEmail={}", request.getUsernameOrEmail());
 
         // -- Resolve user by username or email ------------------------------------
@@ -182,6 +190,7 @@ public class AuthServiceImpl implements AuthService {
         // -- Verify password ------------------------------------------------------
         if (!passwordEncoder.matches(request.getPassword(), user.getPassword())) {
             log.warn("Login failed: invalid password for user '{}'", user.getUsername());
+            securityService.recordLoginFailure(user.getId(), "Invalid password", device);
             throw new BadCredentialsException("Invalid username/email or password");
         }
 
@@ -206,26 +215,44 @@ public class AuthServiceImpl implements AuthService {
                     .build();
         }
 
+        // -- 2FA challenge when the device is not trusted -------------------------
+        boolean trusted = securityService.isDeviceTrusted(user.getId(), device != null ? device.getDeviceId() : null);
+        if (twoFactorService.isEnabled(user.getId()) && !trusted) {
+            log.info("Login requires 2FA: userId={}, email={}", user.getId(), user.getEmail());
+            String challengeToken = jwtProvider.generateTokenWithExpiry(
+                    user.getId(), user.getUsername(), user.getEmail(), user.getRole(),
+                    CHALLENGE_TOKEN_EXPIRY_MS, "LOGIN_2FA");
+
+            return LoginResponse.builder()
+                    .requiresOtp(false)
+                    .requires2fa(true)
+                    .challengeToken(challengeToken)
+                    .userId(user.getId())
+                    .username(user.getUsername())
+                    .email(user.getEmail())
+                    .role(user.getRole())
+                    .trustedDevice(trusted)
+                    .build();
+        }
+
         log.info("User logged in successfully: id={}, username={}", user.getId(), user.getUsername());
-
-        // -- Generate JWT + refresh token ----------------------------------------
-        String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
-        String refreshToken = issueRefreshToken(user.getId());
-
+        AuthResponse authResponse = tokenIssuer.issue(user, device);
+        securityService.recordLoginSuccess(user.getId(), device);
         return LoginResponse.builder()
                 .requiresOtp(false)
-                .token(token)
-                .refreshToken(refreshToken)
+                .token(authResponse.getToken())
+                .refreshToken(authResponse.getRefreshToken())
                 .userId(user.getId())
                 .username(user.getUsername())
                 .email(user.getEmail())
                 .role(user.getRole())
+                .trustedDevice(trusted)
                 .build();
     }
 
     @Override
     @Transactional
-    public AuthResponse verifyLogin(String challengeToken, String code) {
+    public AuthResponse verifyLogin(String challengeToken, String code, boolean rememberDevice, DeviceInfo device) {
         log.debug("Verifying login OTP for challengeToken={}", challengeToken);
 
         // Validate the OTP bound to the challenge
@@ -243,21 +270,57 @@ public class AuthServiceImpl implements AuthService {
             log.info("User enabled after login OTP verification: id={}", user.getId());
         }
 
-        // Generate JWT + refresh token
-        String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
-        String refreshToken = issueRefreshToken(user.getId());
+        AuthResponse authResponse = tokenIssuer.issue(user, device);
+        securityService.recordLoginSuccess(user.getId(), device);
+        if (rememberDevice) {
+            securityService.trustDevice(user.getId(), device);
+        }
+        return authResponse;
+    }
 
-        return UserMapper.toAuthResponse(user, token, refreshToken);
+    @Override
+    @Transactional
+    public AuthResponse verifyTwoFactorLogin(String challengeToken, String code,
+                                             boolean rememberDevice, DeviceInfo device) {
+        log.debug("Verifying 2FA code for challengeToken={}", challengeToken);
+
+        Claims claims = jwtProvider.validateToken(challengeToken)
+                .orElseThrow(() -> new BadCredentialsException("This sign-in session has expired. Please sign in again."));
+
+        if (!"LOGIN_2FA".equals(claims.get("type", String.class))) {
+            throw new BadCredentialsException("Invalid challenge token");
+        }
+
+        Long userId = claims.get("userId", Long.class);
+        if (userId == null) {
+            throw new BadCredentialsException("Invalid challenge token");
+        }
+
+        if (!twoFactorService.verifyCode(userId, code)) {
+            securityService.recordLoginFailure(userId, "Invalid 2FA code", device);
+            throw new BadCredentialsException("That code did not work. Check your authenticator app and try again.");
+        }
+
+        UserCredential user = userRepository.findById(userId)
+                .orElseThrow(() -> new UsernameNotFoundException("User not found"));
+
+        AuthResponse authResponse = tokenIssuer.issue(user, device);
+        securityService.recordLoginSuccess(user.getId(), device);
+        securityService.logEvent(user.getId(), "2FA_VERIFIED", "Two-factor code verified");
+        if (rememberDevice) {
+            securityService.trustDevice(user.getId(), device);
+        }
+        return authResponse;
     }
 
     // ── Refresh-token rotation ───────────────────────────────────────────────
 
     @Override
     @Transactional
-    public AuthResponse refreshToken(String refreshToken) {
+    public AuthResponse refreshToken(String refreshToken, DeviceInfo device) {
         log.debug("Rotating refresh token");
 
-        RefreshToken stored = refreshTokenRepository.findByTokenHashAndRevokedFalse(hashToken(refreshToken))
+        RefreshToken stored = refreshTokenRepository.findByTokenHashAndRevokedFalse(TokenIssuer.hashToken(refreshToken))
                 .orElseThrow(() -> new BadCredentialsException("Invalid or expired refresh token"));
 
         if (stored.getExpiresAt().isBefore(LocalDateTime.now())) {
@@ -273,35 +336,35 @@ public class AuthServiceImpl implements AuthService {
         stored.setRevoked(true);
         refreshTokenRepository.save(stored);
 
-        String token = jwtProvider.generateToken(user.getId(), user.getUsername(), user.getEmail(), user.getRole());
-        String newRefreshToken = issueRefreshToken(user.getId());
-
+        AuthResponse authResponse = tokenIssuer.issue(user, device);
         log.info("Refresh token rotated for userId={}", user.getId());
-        return UserMapper.toAuthResponse(user, token, newRefreshToken);
+        return authResponse;
     }
 
     @Override
     @Transactional
-    public void logout(String refreshToken) {
+    public void logout(String refreshToken, DeviceInfo device) {
         if (refreshToken == null || refreshToken.isBlank()) {
             return;
         }
-        refreshTokenRepository.findByTokenHashAndRevokedFalse(hashToken(refreshToken))
+        refreshTokenRepository.findByTokenHashAndRevokedFalse(TokenIssuer.hashToken(refreshToken))
                 .ifPresent(stored -> {
                     stored.setRevoked(true);
                     refreshTokenRepository.save(stored);
                     log.info("Refresh token revoked (logout) for userId={}", stored.getUserId());
+                    securityService.logEvent(stored.getUserId(), "LOGOUT", "Signed out");
                 });
     }
 
     @Override
     @Transactional
-    public void logoutAll(Long userId) {
+    public void logoutAll(Long userId, DeviceInfo device) {
         List<RefreshToken> active = refreshTokenRepository.findByUserIdAndRevokedFalse(userId);
         for (RefreshToken token : active) {
             token.setRevoked(true);
         }
         refreshTokenRepository.saveAll(active);
+        securityService.logEvent(userId, "LOGOUT_ALL", "Signed out everywhere");
         log.info("All refresh tokens revoked for userId={}", userId);
     }
 
@@ -341,7 +404,7 @@ public class AuthServiceImpl implements AuthService {
         // Short-lived JWT that only grants permission to reset the password
         String resetToken = jwtProvider.generateTokenWithExpiry(
                 user.getId(), user.getUsername(), user.getEmail(), user.getRole(),
-                RESET_TOKEN_EXPIRY_MS, "PASSWORD_RESET");
+                CHALLENGE_TOKEN_EXPIRY_MS, "PASSWORD_RESET");
 
         log.info("Password-reset token issued for userId={}", user.getId());
         return ResetTokenResponse.builder().resetToken(resetToken).build();
@@ -362,11 +425,12 @@ public class AuthServiceImpl implements AuthService {
                 .orElseThrow(() -> new UsernameNotFoundException("User not found for reset token"));
 
         user.setPassword(passwordEncoder.encode(request.getNewPassword()));
+        user.setPasswordChangedAt(LocalDateTime.now());
         userRepository.save(user);
 
         // Invalidate all existing refresh tokens for the user
-        logoutAll(userId);
-
+        logoutAll(userId, null);
+        securityService.logEvent(userId, "PASSWORD_RESET", "Password reset");
         log.info("Password reset completed for userId={}", userId);
     }
 
@@ -381,11 +445,12 @@ public class AuthServiceImpl implements AuthService {
         }
 
         user.setPassword(passwordEncoder.encode(newPassword));
+        user.setPasswordChangedAt(LocalDateTime.now());
         userRepository.save(user);
 
         // Invalidate existing refresh tokens so other sessions re-authenticate
-        logoutAll(userId);
-
+        logoutAll(userId, null);
+        securityService.logEvent(userId, "PASSWORD_CHANGED", "Password changed");
         log.info("Password changed for userId={}", userId);
     }
 
@@ -421,36 +486,5 @@ public class AuthServiceImpl implements AuthService {
     public void cleanupExpiredRefreshTokens() {
         refreshTokenRepository.deleteByExpiresAtBefore(LocalDateTime.now());
         log.debug("Cleanup sweep completed for expired refresh tokens");
-    }
-
-    // ── Private helpers ──────────────────────────────────────────────────────
-
-    /**
-     * Issues a new opaque refresh token (raw value returned to the client,
-     * only its SHA-256 hash is persisted).
-     */
-    private String issueRefreshToken(Long userId) {
-        byte[] bytes = new byte[32];
-        RANDOM.nextBytes(bytes);
-        String rawToken = HexFormat.of().formatHex(bytes);
-
-        RefreshToken entity = RefreshToken.builder()
-                .userId(userId)
-                .tokenHash(hashToken(rawToken))
-                .expiresAt(LocalDateTime.now().plusSeconds(7L * 24 * 60 * 60))
-                .build();
-        refreshTokenRepository.save(entity);
-        return rawToken;
-    }
-
-    /** SHA-256 hash of a raw refresh token (never store plain text). */
-    private String hashToken(String rawToken) {
-        try {
-            MessageDigest md = MessageDigest.getInstance("SHA-256");
-            byte[] digest = md.digest(rawToken.getBytes(StandardCharsets.UTF_8));
-            return HexFormat.of().formatHex(digest);
-        } catch (Exception e) {
-            throw new RuntimeException("SHA-256 not available", e);
-        }
     }
 }

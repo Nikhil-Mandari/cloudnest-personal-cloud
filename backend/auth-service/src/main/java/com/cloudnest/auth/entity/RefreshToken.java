@@ -52,6 +52,32 @@ public class RefreshToken {
     @Builder.Default
     private boolean revoked = false;
 
+    // ── Device / session metadata (Security page sessions list) ───────────
+
+    @Column(name = "device_id", length = 128)
+    private String deviceId;
+
+    @Column(name = "device_name", length = 120)
+    private String deviceName;
+
+    @Column(length = 60)
+    private String browser;
+
+    @Column(length = 60)
+    private String os;
+
+    @Column(name = "device_type", length = 16)
+    private String deviceType;
+
+    @Column(name = "ip_address", length = 45)
+    private String ipAddress;
+
+    @Column(length = 80)
+    private String location;
+
+    @Column(name = "last_active_at")
+    private LocalDateTime lastActiveAt;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();

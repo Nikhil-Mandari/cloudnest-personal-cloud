@@ -32,6 +32,13 @@ app:
     # `false` (default) = development mode: OTPs are returned as devOtp.
     enabled: ${MAIL_ENABLED:false}
 
+# ── WebAuthn (passkeys) ─────────────────────────────────────
+webauthn:
+  # Effective domain the browser sees (must match the origin host of the app).
+  rp-id: ${WEBAUTHN_RP_ID:localhost}
+  rp-name: ${WEBAUTHN_RP_NAME:CloudNest}
+  origins: ${WEBAUTHN_ORIGINS:http://localhost:5173,http://localhost:8080}
+
 # ── Social login (Google / GitHub OAuth2) ────────────────────
 # Client credentials come from environment variables. A provider with empty
 # client-id/secret is reported as unconfigured (authorize returns 503) and

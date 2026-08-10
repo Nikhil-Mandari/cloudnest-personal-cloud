@@ -4,6 +4,7 @@ import com.cloudnest.auth.client.UserServiceClient;
 import com.cloudnest.auth.dto.AuthResponse;
 import com.cloudnest.auth.dto.ChangePasswordRequest;
 import com.cloudnest.auth.dto.CreateProfileRequest;
+import com.cloudnest.auth.dto.DeviceInfo;
 import com.cloudnest.auth.dto.ForgotPasswordRequest;
 import com.cloudnest.auth.dto.LoginRequest;
 import com.cloudnest.auth.dto.LoginResponse;
@@ -14,8 +15,10 @@ import com.cloudnest.auth.dto.RegisterResponse;
 import com.cloudnest.auth.dto.ResendOtpRequest;
 import com.cloudnest.auth.dto.ResetPasswordRequest;
 import com.cloudnest.auth.dto.ResetTokenResponse;
+import com.cloudnest.auth.dto.TwoFactorLoginRequest;
 import com.cloudnest.auth.dto.VerifyOtpRequest;
 import com.cloudnest.auth.service.AuthService;
+import com.cloudnest.auth.util.DeviceInfoParser;
 import com.cloudnest.auth.util.StandardResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
@@ -36,7 +39,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * REST controller for authentication operations.
  * <p>
- * Provides endpoints for user registration, login, and JWT token validation.
+ * Provides endpoints for user registration, login (with optional OTP and
+ * TOTP 2FA steps), JWT token validation, refresh-token rotation and the
+ * password flows.
  */
 @Slf4j
 @RestController
@@ -45,10 +50,14 @@ public class AuthController {
 
     private final AuthService authService;
     private final UserServiceClient userServiceClient;
+    private final DeviceInfoParser deviceInfoParser;
 
-    public AuthController(AuthService authService, UserServiceClient userServiceClient) {
+    public AuthController(AuthService authService,
+                          UserServiceClient userServiceClient,
+                          DeviceInfoParser deviceInfoParser) {
         this.authService = authService;
         this.userServiceClient = userServiceClient;
+        this.deviceInfoParser = deviceInfoParser;
     }
 
     /**
@@ -78,7 +87,7 @@ public class AuthController {
     /**
      * Verifies the registration OTP and activates the account.
      *
-     * @param request  the OTP verification payload (email + code)
+     * @param request        the OTP verification payload (email + code)
      * @param rememberDevice when true the device is trusted (skips future OTP)
      * @return 200 OK with the JWT token and user details
      */
@@ -90,7 +99,8 @@ public class AuthController {
 
         log.info("POST /api/auth/register/verify - email={}", request.getEmail());
 
-        AuthResponse authResponse = authService.verifyRegistration(request.getEmail(), request.getCode());
+        DeviceInfo device = deviceInfoParser.parse(httpRequest);
+        AuthResponse authResponse = authService.verifyRegistration(request.getEmail(), request.getCode(), rememberDevice, device);
 
         // Provision the user profile in user-service now that the account is active
         provisionProfile(authResponse);
@@ -155,11 +165,11 @@ public class AuthController {
     }
 
     /**
-     * Authenticates a user and returns a JWT token, or an OTP challenge
-     * when the account requires email verification.
+     * Authenticates a user and returns a JWT token, an OTP challenge (pending
+     * accounts) or a TOTP 2FA challenge.
      *
      * @param request the login payload (username/email and password)
-     * @return 200 OK with the JWT token and user details, or an OTP challenge
+     * @return 200 OK with the JWT token and user details, or a challenge
      */
     @PostMapping("/login")
     public ResponseEntity<StandardResponse<LoginResponse>> login(
@@ -168,11 +178,17 @@ public class AuthController {
 
         log.info("POST /api/auth/login - usernameOrEmail={}", request.getUsernameOrEmail());
 
-        LoginResponse response = authService.login(request);
+        DeviceInfo device = deviceInfoParser.parse(httpRequest);
+        LoginResponse response = authService.login(request, device);
 
-        String message = response.isRequiresOtp()
-                ? "Password verified. An OTP has been sent to your email."
-                : "Login successful";
+        String message;
+        if (response.isRequires2fa()) {
+            message = "Password verified. Enter your authenticator code.";
+        } else if (response.isRequiresOtp()) {
+            message = "Password verified. An OTP has been sent to your email.";
+        } else {
+            message = "Login successful";
+        }
 
         return ResponseEntity.ok(
                 StandardResponse.<LoginResponse>builder()
@@ -186,7 +202,7 @@ public class AuthController {
     /**
      * Verifies the login OTP and returns a JWT token.
      *
-     * @param request  the OTP verification payload (challengeToken + code)
+     * @param request        the OTP verification payload (challengeToken + code)
      * @param rememberDevice when true the device is trusted (skips future OTP)
      * @return 200 OK with the JWT token and user details
      */
@@ -198,7 +214,8 @@ public class AuthController {
 
         log.info("POST /api/auth/login/verify - challengeToken={}", request.getChallengeToken());
 
-        AuthResponse authResponse = authService.verifyLogin(request.getChallengeToken(), request.getCode());
+        DeviceInfo device = deviceInfoParser.parse(httpRequest);
+        AuthResponse authResponse = authService.verifyLogin(request.getChallengeToken(), request.getCode(), rememberDevice, device);
 
         // Best-effort profile provisioning (idempotent in user-service) — the
         // profile may be missing if registration provisioning failed earlier.
@@ -208,6 +225,36 @@ public class AuthController {
                 StandardResponse.<AuthResponse>builder()
                         .success(true)
                         .message("Login verified successfully")
+                        .data(authResponse)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Completes a login blocked on the 2FA step (TOTP or backup code).
+     *
+     * @param request        the 2FA payload (challengeToken + code)
+     * @param rememberDevice when true the device is trusted (skips 2FA later)
+     * @return 200 OK with the JWT token and user details
+     */
+    @PostMapping("/login/2fa")
+    public ResponseEntity<StandardResponse<AuthResponse>> verifyTwoFactorLogin(
+            @Valid @RequestBody TwoFactorLoginRequest request,
+            @RequestParam(defaultValue = "false") boolean rememberDevice,
+            HttpServletRequest httpRequest) {
+
+        log.info("POST /api/auth/login/2fa - challengeToken={}", request.getChallengeToken());
+
+        DeviceInfo device = deviceInfoParser.parse(httpRequest);
+        AuthResponse authResponse = authService.verifyTwoFactorLogin(
+                request.getChallengeToken(), request.getCode(), rememberDevice, device);
+
+        provisionProfile(authResponse);
+
+        return ResponseEntity.ok(
+                StandardResponse.<AuthResponse>builder()
+                        .success(true)
+                        .message("Two-factor verification successful")
                         .data(authResponse)
                         .path(httpRequest.getRequestURI())
                         .build());
@@ -226,7 +273,8 @@ public class AuthController {
 
         log.info("POST /api/auth/refresh");
 
-        AuthResponse authResponse = authService.refreshToken(request.getRefreshToken());
+        DeviceInfo device = deviceInfoParser.parse(httpRequest);
+        AuthResponse authResponse = authService.refreshToken(request.getRefreshToken(), device);
 
         return ResponseEntity.ok(
                 StandardResponse.<AuthResponse>builder()
@@ -250,7 +298,8 @@ public class AuthController {
 
         log.info("POST /api/auth/logout");
 
-        authService.logout(request != null ? request.getRefreshToken() : null);
+        DeviceInfo device = deviceInfoParser.parse(httpRequest);
+        authService.logout(request != null ? request.getRefreshToken() : null, device);
 
         return ResponseEntity.ok(
                 StandardResponse.<Void>builder()
@@ -273,7 +322,8 @@ public class AuthController {
 
         log.info("POST /api/auth/logout-all - userId={}", userIdHeader);
 
-        authService.logoutAll(userIdHeader);
+        DeviceInfo device = deviceInfoParser.parse(httpRequest);
+        authService.logoutAll(userIdHeader, device);
 
         return ResponseEntity.ok(
                 StandardResponse.<Void>builder()

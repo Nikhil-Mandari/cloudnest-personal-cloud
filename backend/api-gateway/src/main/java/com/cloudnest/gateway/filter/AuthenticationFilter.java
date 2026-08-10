@@ -42,6 +42,9 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             "/api/auth/register/verify",
             "/api/auth/login",
             "/api/auth/login/verify",
+            "/api/auth/login/2fa",
+            "/api/auth/passkeys/authenticate/start",
+            "/api/auth/passkeys/authenticate/finish",
             "/api/auth/refresh",
             "/api/auth/forgot-password",
             "/api/auth/forgot-password/verify",
@@ -130,9 +133,18 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     /**
      * Returns {@code true} if the given request path matches a public endpoint.
+     * <p>
+     * Entries ending in {@code /} (directory prefixes such as
+     * {@code /api/auth/oauth/}) match any path below them. Other entries are
+     * matched exactly or at a path-segment boundary so that a public entry
+     * like {@code /api/auth/login} can never mask a protected endpoint such as
+     * {@code /api/auth/login-history}.
      */
     private boolean isPublicPath(String path) {
-        return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
+        return PUBLIC_PATHS.stream().anyMatch(publicPath ->
+                publicPath.endsWith("/")
+                        ? path.startsWith(publicPath)
+                        : path.equals(publicPath) || path.startsWith(publicPath + "/"));
     }
 
     /**
