@@ -24,6 +24,6 @@ public class FileResponse {
     private String fileType;
     private Long fileSize;
     private Long ownerId;
-    private Long folderId;
+    private String folderId;
     private String status;
 }
