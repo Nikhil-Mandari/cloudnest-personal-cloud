@@ -22,8 +22,10 @@ public class CorsConfig {
     private static final List<String> ALLOWED_ORIGINS = List.of(
             "http://localhost:3000",          // React dev server
             "http://localhost:5173",          // Vite dev server (alt)
+            "http://localhost:5174",          // Vite dev server (current default)
             "http://127.0.0.1:3000",
-            "http://127.0.0.1:5173"
+            "http://127.0.0.1:5173",
+            "http://127.0.0.1:5174"
     );
 
     // -- HTTP methods exposed to the client --------------------------------
@@ -38,6 +40,9 @@ public class CorsConfig {
             // Stable device id sent by the frontend axios interceptor on every
             // request (OTP / trusted-device flows) — required for CORS preflight.
             "X-Device-Id",
+            // Password of a password-protected public share link (share-service
+            // public download / preview endpoints).
+            "X-Share-Password",
             "X-Requested-With",
             "Accept",
             "Origin",
