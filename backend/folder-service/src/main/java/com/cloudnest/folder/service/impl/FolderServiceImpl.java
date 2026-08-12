@@ -578,7 +578,10 @@ public class FolderServiceImpl implements FolderService {
             throw new FolderNotFoundException("Folder not found with id: " + id);
         }
 
-        if (!folder.getOwnerId().equals(ownerId)) {
+        // Ownership is always enforced: the API Gateway injects X-User-Id for
+        // external callers, and internal Feign callers (Share Service) forward
+        // the resource owner's ID.
+        if (ownerId != null && !folder.getOwnerId().equals(ownerId)) {
             log.warn("Folder {} does not belong to owner {}", id, ownerId);
             throw new FolderNotFoundException("Folder not found with id: " + id);
         }

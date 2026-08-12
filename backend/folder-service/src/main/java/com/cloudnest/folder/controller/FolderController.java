@@ -244,6 +244,9 @@ public class FolderController {
     @GetMapping("/{id}")
     public ResponseEntity<StandardResponse<FolderResponse>> getFolder(
             @PathVariable UUID id,
+            // Internal consumers (Share Service) send the resource owner's ID so
+            // ownership checks still run; the API Gateway injects this header
+            // for every external call.
             @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
 
