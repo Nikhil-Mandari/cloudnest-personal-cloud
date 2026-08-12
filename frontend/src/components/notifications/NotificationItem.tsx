@@ -1,7 +1,9 @@
+import { useNavigate } from 'react-router-dom';
 import { motion } from 'framer-motion';
 import { MailOpen, Trash2 } from 'lucide-react';
 
-import type { AppNotification } from '@/types';
+import { APP_ROUTES } from '@/constants/routes';
+import type { AppNotification, NotificationType } from '@/types';
 import { cn } from '@/utils/cn';
 import { formatFileDate } from '@/utils/file';
 import { formatRelativeTime } from '@/utils/format';
@@ -16,6 +18,22 @@ export interface NotificationItemProps {
   isMutating?: boolean;
 }
 
+/** Notification types that navigate to the Shared With Me page on click. */
+const SHARE_NOTIFICATION_TYPES: ReadonlySet<NotificationType> = new Set([
+  'SHARE_RECEIVED',
+  'SHARE_UPDATED',
+  'SHARE_REVOKED',
+  'FILE_SHARED',
+  'FOLDER_SHARED',
+]);
+
+/** Notification types that navigate to the Storage Plans page on click. */
+const BILLING_NOTIFICATION_TYPES: ReadonlySet<NotificationType> = new Set([
+  'PAYMENT_SUCCESS',
+  'PAYMENT_FAILED',
+  'PLAN_UPGRADED',
+]);
+
 /** A single notification row with hover actions. */
 export function NotificationItem({
   notification,
@@ -23,7 +41,26 @@ export function NotificationItem({
   onDelete,
   isMutating = false,
 }: NotificationItemProps) {
+  const navigate = useNavigate();
   const unread = !notification.isRead;
+  const isShare = SHARE_NOTIFICATION_TYPES.has(notification.type);
+  const isBilling = BILLING_NOTIFICATION_TYPES.has(notification.type);
+  const clickable = isShare || isBilling;
+
+  /** Share/billing notifications open their target page in the current tab. */
+  const handleOpen = (event: React.MouseEvent) => {
+    // Never hijack clicks on the row's own action buttons.
+    if ((event.target as HTMLElement).closest('button')) {
+      return;
+    }
+    if (!clickable) {
+      return;
+    }
+    if (unread) {
+      onMarkRead(notification.id);
+    }
+    navigate(isShare ? APP_ROUTES.shared : APP_ROUTES.plans);
+  };
 
   return (
     <motion.li
@@ -32,9 +69,11 @@ export function NotificationItem({
       animate={{ opacity: 1, y: 0 }}
       exit={{ opacity: 0, height: 0 }}
       transition={{ duration: 0.16, ease: 'easeOut' }}
+      onClick={handleOpen}
       className={cn(
         'group flex items-start gap-3.5 border-b border-gray-100 px-5 py-4 transition-colors last:border-0 dark:border-gray-800',
         unread ? 'bg-brand-500/[0.04] dark:bg-brand-400/[0.04]' : 'hover:bg-gray-50 dark:hover:bg-gray-800/40',
+        clickable && 'cursor-pointer',
       )}
     >
       <NotificationIcon type={notification.type} />

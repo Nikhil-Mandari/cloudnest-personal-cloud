@@ -2,9 +2,11 @@ package com.cloudnest.share.service.impl;
 
 import com.cloudnest.share.client.FileServiceClient;
 import com.cloudnest.share.client.FolderServiceClient;
+import com.cloudnest.share.client.NotificationServiceClient;
 import com.cloudnest.share.client.UserServiceClient;
 import com.cloudnest.share.dto.FileResponse;
 import com.cloudnest.share.dto.FolderResponse;
+import com.cloudnest.share.dto.NotificationCreateRequest;
 import com.cloudnest.share.dto.ShareResponse;
 import com.cloudnest.share.dto.ShareWithUserRequest;
 import com.cloudnest.share.dto.SharedFileContent;
@@ -74,6 +76,7 @@ public class ShareServiceImpl implements ShareService {
     private final UserServiceClient userServiceClient;
     private final FileServiceClient fileServiceClient;
     private final FolderServiceClient folderServiceClient;
+    private final NotificationServiceClient notificationServiceClient;
 
     /**
      * Runs the duplicate-check + insert as its own transaction that COMMITS
@@ -90,12 +93,14 @@ public class ShareServiceImpl implements ShareService {
             UserServiceClient userServiceClient,
             FileServiceClient fileServiceClient,
             FolderServiceClient folderServiceClient,
+            NotificationServiceClient notificationServiceClient,
             PlatformTransactionManager transactionManager) {
         this.shareRepository = shareRepository;
         this.shareMapper = shareMapper;
         this.userServiceClient = userServiceClient;
         this.fileServiceClient = fileServiceClient;
         this.folderServiceClient = folderServiceClient;
+        this.notificationServiceClient = notificationServiceClient;
         this.shareCreationTransaction = new TransactionTemplate(transactionManager);
         this.shareCreationTransaction.setPropagationBehavior(Propagation.REQUIRES_NEW.value());
     }
@@ -176,6 +181,11 @@ public class ShareServiceImpl implements ShareService {
         log.info("File shared successfully: id={}, fileId={}, sharedWithUserId={}, token={}, hasPassword={}",
                 saved.getId(), fileId, recipientId, saved.getShareToken(), saved.getPasswordHash() != null);
 
+        // Notify the recipient (best effort — never fails the share).
+        notifyShareCreated(
+                String.valueOf(fileId), file.getOriginalFileName(), ResourceType.FILE,
+                recipientId, ownerId, saved.getPermission());
+
         return enrichWithResourceName(shareMapper.toShareResponse(saved), ResourceType.FILE, saved.getOwnerId());
     }
 
@@ -252,6 +262,11 @@ public class ShareServiceImpl implements ShareService {
         }
         log.info("Folder shared successfully: id={}, folderId={}, sharedWithUserId={}, token={}, hasPassword={}",
                 saved.getId(), folderId, recipientId, saved.getShareToken(), saved.getPasswordHash() != null);
+
+        // Notify the recipient (best effort — never fails the share).
+        notifyShareCreated(
+                folderId, folder.getName(), ResourceType.FOLDER,
+                recipientId, ownerId, saved.getPermission());
 
         return enrichWithResourceName(shareMapper.toShareResponse(saved), ResourceType.FOLDER, saved.getOwnerId());
     }
@@ -537,6 +552,58 @@ public class ShareServiceImpl implements ShareService {
     // ─────────────────────────────────────────────────────────────────────────
     // Private Helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Creates an in-app notification for the share recipient via the
+     * Notification Service. Best effort: a notification failure must never
+     * roll back a successfully created share, so any error is logged and
+     * swallowed. Called only after a share is actually created (never on the
+     * duplicate path), so one share = one notification.
+     */
+    private void notifyShareCreated(
+            String resourceId, String resourceName, ResourceType type,
+            Long recipientId, Long ownerId, Permission permission) {
+        try {
+            String senderName = resolveSenderName(ownerId);
+            String label = resourceName != null && !resourceName.isBlank()
+                    ? resourceName
+                    : (type == ResourceType.FILE ? "a file" : "a folder");
+
+            notificationServiceClient.createNotification(NotificationCreateRequest.builder()
+                    .userId(recipientId)
+                    .type("SHARE_RECEIVED")
+                    .title(senderName + " shared " + label + " with you")
+                    .message("Permission: " + permission)
+                    .relatedResourceId(resourceId)
+                    .relatedResourceType(type.name())
+                    .build());
+            log.info("Share notification sent to userId={} for '{}'", recipientId, label);
+        } catch (Exception e) {
+            log.warn("Failed to send share notification to userId={}: {}", recipientId, e.getMessage());
+        }
+    }
+
+    /**
+     * Best-effort resolution of the sharer's display name for notifications.
+     */
+    private String resolveSenderName(Long ownerId) {
+        try {
+            StandardResponse<UserResponse> sender = userServiceClient.getUserById(ownerId);
+            if (sender != null && sender.getData() != null) {
+                if (sender.getData().getDisplayName() != null
+                        && !sender.getData().getDisplayName().isBlank()) {
+                    return sender.getData().getDisplayName();
+                }
+                if (sender.getData().getUsername() != null
+                        && !sender.getData().getUsername().isBlank()) {
+                    return sender.getData().getUsername();
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not resolve sender name for userId={}: {}", ownerId, e.getMessage());
+        }
+        return "Someone";
+    }
 
     /**
      * Returns the monitor guarding share creation for a resource/recipient pair.
