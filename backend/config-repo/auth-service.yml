@@ -37,15 +37,20 @@ webauthn:
   # Effective domain the browser sees (must match the origin host of the app).
   rp-id: ${WEBAUTHN_RP_ID:localhost}
   rp-name: ${WEBAUTHN_RP_NAME:CloudNest}
-  origins: ${WEBAUTHN_ORIGINS:http://localhost:5173,http://localhost:8080}
+  # Both development Vite origins are allowed so passkeys work regardless of
+  # which dev server the developer is running.
+  origins: ${WEBAUTHN_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:8080}
 
 # ── Social login (Google / GitHub OAuth2) ────────────────────
 # Client credentials come from environment variables. A provider with empty
 # client-id/secret is reported as unconfigured (authorize returns 503) and
 # the frontend hides its button.
 oauth:
-  # Where the browser is redirected after a successful social sign-in.
-  frontend-base-url: ${OAUTH_FRONTEND_BASE_URL:http://localhost:5173}
+  # Where the browser is redirected after a successful social sign-in. The
+  # currently running Vite dev server is 5174; override OAUTH_FRONTEND_BASE_URL
+  # when developing on another port. Must match a redirect URI allowed in the
+  # Google / GitHub developer console.
+  frontend-base-url: ${OAUTH_FRONTEND_BASE_URL:http://localhost:5174}
   google:
     client-id: ${GOOGLE_CLIENT_ID:}
     client-secret: ${GOOGLE_CLIENT_SECRET:}

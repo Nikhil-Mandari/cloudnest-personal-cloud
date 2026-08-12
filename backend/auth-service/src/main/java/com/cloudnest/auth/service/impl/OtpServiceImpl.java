@@ -44,9 +44,20 @@ public class OtpServiceImpl implements OtpService {
     private final OtpVerificationRepository otpRepository;
     private final EmailService emailService;
 
-    public OtpServiceImpl(OtpVerificationRepository otpRepository, EmailService emailService) {
+    /**
+     * Whether real SMTP email delivery is enabled ({@code app.mail.enabled}).
+     * When enabled, the plain-text OTP is NEVER returned in API responses — it
+     * only exists inside the delivered email. The devOtp fallback is available
+     * exclusively in development mode ({@code MAIL_ENABLED=false}).
+     */
+    private final boolean mailEnabled;
+
+    public OtpServiceImpl(OtpVerificationRepository otpRepository,
+                          EmailService emailService,
+                          @org.springframework.beans.factory.annotation.Value("${app.mail.enabled:false}") boolean mailEnabled) {
         this.otpRepository = otpRepository;
         this.emailService = emailService;
+        this.mailEnabled = mailEnabled;
     }
 
     @Override
@@ -94,8 +105,7 @@ public class OtpServiceImpl implements OtpService {
 
         log.info("OTP generated for email={}, purpose={}, expiresAt={}", email, purpose, expiresAt);
 
-        // Attempt to send via email. If SMTP is not configured, include the
-        // plain-text OTP as devOtp so development flows are not blocked.
+        // Attempt to send via email.
         OtpDispatchResponse.OtpDispatchResponseBuilder response = OtpDispatchResponse.builder()
                 .sent(false)
                 .devOtp(null)
@@ -107,12 +117,21 @@ public class OtpServiceImpl implements OtpService {
             response.sent(true);
             log.info("OTP email sent to {}", email);
         } catch (Exception e) {
-            log.warn("Failed to send OTP email to {}: {}. Returning devOtp for development.", email, e.getMessage());
-            // The code still reached the user (via devOtp in the response), so
-            // mark the dispatch as sent — the frontend treats `sent=false` as
-            // "no account exists" and would otherwise abort the flow.
-            response.sent(true);
-            response.devOtp(plainOtp);
+            if (!mailEnabled) {
+                // Development mode: SMTP is off by design, so surface the OTP in
+                // the response to keep local flows testable. The code reached the
+                // user via devOtp, so mark the dispatch as sent (the frontend
+                // treats `sent=false` as "no account exists" and would abort).
+                log.warn("Mail disabled — returning devOtp for development (email={})", email);
+                response.sent(true);
+                response.devOtp(plainOtp);
+            } else {
+                // Real email mode: the OTP must NEVER leak into the API response.
+                // Report the delivery failure (sent=false) and let the frontend
+                // surface a retry prompt instead.
+                log.error("Failed to send OTP email to {} although mail is enabled: {}",
+                        email, e.getMessage());
+            }
         }
 
         if (challengeToken != null) {
