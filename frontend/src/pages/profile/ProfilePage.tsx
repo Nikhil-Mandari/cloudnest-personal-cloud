@@ -23,6 +23,7 @@ import { Avatar } from '@/components/common/Avatar';
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { FileIcon } from '@/components/files/FileIcon';
+import { LocationCard } from '@/components/profile/LocationCard';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import { Input } from '@/components/ui/Input';
@@ -219,7 +220,11 @@ export function ProfilePage() {
           initial={{ opacity: 0, y: 12 }}
           animate={{ opacity: 1, y: 0 }}
           transition={{ duration: 0.3 }}
+          className="space-y-4"
         >
+          {/* Location detection — explicit browser permission, UI-only */}
+          <LocationCard />
+
           <Card>
             <CardBody className="flex flex-col items-center text-center">
               <div className="relative">
