@@ -2,6 +2,7 @@ package com.cloudnest.share.service;
 
 import com.cloudnest.share.dto.ShareResponse;
 import com.cloudnest.share.dto.ShareWithUserRequest;
+import com.cloudnest.share.dto.SharedFileContent;
 import com.cloudnest.share.dto.UpdatePermissionRequest;
 
 import java.util.List;
@@ -58,6 +59,38 @@ public interface ShareService {
      * @return the share response if valid and not expired
      */
     ShareResponse getPublicShare(String token);
+
+    /**
+     * Verifies the password of a password-protected public share link.
+     *
+     * @param token    the public share token
+     * @param password the plain-text password supplied by the visitor
+     * @return the share response once the password has been verified
+     */
+    ShareResponse verifySharePassword(String token, String password);
+
+    /**
+     * Streams a shared file's content for download through a public link.
+     * <p>
+     * Enforces token validity, expiry, the link password (when set) and the
+     * permission level (VIEW shares are preview-only).
+     *
+     * @param token    the public share token
+     * @param password the plain-text password (required when the link is protected)
+     * @return the file content together with its metadata
+     */
+    SharedFileContent downloadPublicShare(String token, String password);
+
+    /**
+     * Streams a shared file's content for in-browser preview through a public
+     * link. Enforces token validity, expiry and the link password (when set);
+     * every permission level may preview.
+     *
+     * @param token    the public share token
+     * @param password the plain-text password (required when the link is protected)
+     * @return the file content together with its metadata
+     */
+    SharedFileContent previewPublicShare(String token, String password);
 
     /**
      * Updates the permission level and/or expiry date of an existing share.

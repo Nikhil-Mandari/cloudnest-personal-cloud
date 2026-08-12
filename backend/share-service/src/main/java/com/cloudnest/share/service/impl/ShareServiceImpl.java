@@ -7,6 +7,7 @@ import com.cloudnest.share.dto.FileResponse;
 import com.cloudnest.share.dto.FolderResponse;
 import com.cloudnest.share.dto.ShareResponse;
 import com.cloudnest.share.dto.ShareWithUserRequest;
+import com.cloudnest.share.dto.SharedFileContent;
 import com.cloudnest.share.dto.UpdatePermissionRequest;
 import com.cloudnest.share.dto.UserResponse;
 import com.cloudnest.share.entity.Share;
@@ -15,16 +16,22 @@ import com.cloudnest.share.entity.Share.ResourceType;
 import com.cloudnest.share.exception.DuplicateShareException;
 import com.cloudnest.share.exception.ShareExpiredException;
 import com.cloudnest.share.exception.ShareNotFoundException;
+import com.cloudnest.share.exception.SharePasswordException;
 import com.cloudnest.share.exception.UnauthorizedShareAccessException;
 import com.cloudnest.share.mapper.ShareMapper;
 import com.cloudnest.share.repository.ShareRepository;
 import com.cloudnest.share.service.ShareService;
 import com.cloudnest.share.util.StandardResponse;
+import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.SecureRandom;
 import java.time.LocalDateTime;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -77,13 +84,27 @@ public class ShareServiceImpl implements ShareService {
                 fileId, ownerId, request.getSharedWithUserId(), request.getSharedWithEmail());
 
         // ── Validate the file exists ────────────────────────────────────────────
-        StandardResponse<FileResponse> fileResponse = fileServiceClient.getFileById(fileId);
-        if (fileResponse == null || fileResponse.getData() == null) {
-            log.warn("Share file failed: file not found with id={}", fileId);
+        // Pass the owner's ID so the File Service's ownership check still runs;
+        // translate the owning service's Feign errors back into share-domain
+        // exceptions so 403/404 semantics survive the service boundary.
+        FileResponse file;
+        try {
+            StandardResponse<FileResponse> fileResponse =
+                    fileServiceClient.getFileById(fileId, ownerId);
+            if (fileResponse == null || fileResponse.getData() == null) {
+                log.warn("Share file failed: file not found with id={}", fileId);
+                throw new ShareNotFoundException("File not found with id: " + fileId);
+            }
+            file = fileResponse.getData();
+        } catch (ShareNotFoundException e) {
+            throw e;
+        } catch (FeignException.Forbidden | FeignException.Unauthorized e) {
+            log.warn("Share file failed: forbidden file access id={}: {}", fileId, e.getMessage());
+            throw new UnauthorizedShareAccessException("You do not own this file");
+        } catch (FeignException e) {
+            log.warn("Share file failed: file service error for id={}: {}", fileId, e.getMessage());
             throw new ShareNotFoundException("File not found with id: " + fileId);
         }
-
-        FileResponse file = fileResponse.getData();
 
         // ── Ensure the owner owns the file ──────────────────────────────────────
         if (!file.getOwnerId().equals(ownerId)) {
@@ -110,14 +131,15 @@ public class ShareServiceImpl implements ShareService {
                 ownerId,
                 recipientId,
                 request.getPermission(),
-                request.getExpiryDate()
+                request.getExpiryDate(),
+                request.getPassword()
         );
 
         Share saved = shareRepository.save(share);
-        log.info("File shared successfully: id={}, fileId={}, sharedWithUserId={}, token={}",
-                saved.getId(), fileId, recipientId, saved.getShareToken());
+        log.info("File shared successfully: id={}, fileId={}, sharedWithUserId={}, token={}, hasPassword={}",
+                saved.getId(), fileId, recipientId, saved.getShareToken(), saved.getPasswordHash() != null);
 
-        return shareMapper.toShareResponse(saved);
+        return enrichWithResourceName(shareMapper.toShareResponse(saved), ResourceType.FILE, saved.getOwnerId());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -136,13 +158,24 @@ public class ShareServiceImpl implements ShareService {
                 folderId, ownerId, request.getSharedWithUserId(), request.getSharedWithEmail());
 
         // ── Validate the folder exists ──────────────────────────────────────────
-        StandardResponse<FolderResponse> folderResponse = folderServiceClient.getFolderById(folderId);
-        if (folderResponse == null || folderResponse.getData() == null) {
-            log.warn("Share folder failed: folder not found with id={}", folderId);
+        // Pass the owner's ID so the Folder Service's ownership check still runs;
+        // translate the owning service's Feign errors back into share-domain
+        // exceptions so 404 semantics survive the service boundary.
+        FolderResponse folder;
+        try {
+            StandardResponse<FolderResponse> folderResponse =
+                    folderServiceClient.getFolderById(folderId, ownerId);
+            if (folderResponse == null || folderResponse.getData() == null) {
+                log.warn("Share folder failed: folder not found with id={}", folderId);
+                throw new ShareNotFoundException("Folder not found with id: " + folderId);
+            }
+            folder = folderResponse.getData();
+        } catch (ShareNotFoundException e) {
+            throw e;
+        } catch (FeignException e) {
+            log.warn("Share folder failed: folder service error for id={}: {}", folderId, e.getMessage());
             throw new ShareNotFoundException("Folder not found with id: " + folderId);
         }
-
-        FolderResponse folder = folderResponse.getData();
 
         // ── Ensure the owner owns the folder ────────────────────────────────────
         // Note: Folder Service uses UUID for ownerId; convert both to String for comparison
@@ -170,14 +203,15 @@ public class ShareServiceImpl implements ShareService {
                 ownerId,
                 recipientId,
                 request.getPermission(),
-                request.getExpiryDate()
+                request.getExpiryDate(),
+                request.getPassword()
         );
 
         Share saved = shareRepository.save(share);
-        log.info("Folder shared successfully: id={}, folderId={}, sharedWithUserId={}, token={}",
-                saved.getId(), folderId, recipientId, saved.getShareToken());
+        log.info("Folder shared successfully: id={}, folderId={}, sharedWithUserId={}, token={}, hasPassword={}",
+                saved.getId(), folderId, recipientId, saved.getShareToken(), saved.getPasswordHash() != null);
 
-        return shareMapper.toShareResponse(saved);
+        return enrichWithResourceName(shareMapper.toShareResponse(saved), ResourceType.FOLDER, saved.getOwnerId());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -194,7 +228,8 @@ public class ShareServiceImpl implements ShareService {
 
         return shareRepository.findByOwnerId(ownerId)
                 .stream()
-                .map(shareMapper::toShareResponse)
+                .map(share -> enrichWithResourceName(
+                        shareMapper.toShareResponse(share), share.getResourceType(), share.getOwnerId()))
                 .collect(Collectors.toList());
     }
 
@@ -212,7 +247,8 @@ public class ShareServiceImpl implements ShareService {
 
         return shareRepository.findBySharedWithUserId(userId)
                 .stream()
-                .map(shareMapper::toShareResponse)
+                .map(share -> enrichWithResourceName(
+                        shareMapper.toShareResponse(share), share.getResourceType(), share.getOwnerId()))
                 .collect(Collectors.toList());
     }
 
@@ -242,7 +278,159 @@ public class ShareServiceImpl implements ShareService {
         log.info("Public share accessed: token={}, resourceId={}, resourceType={}",
                 token, share.getResourceId(), share.getResourceType());
 
-        return shareMapper.toShareResponse(share);
+        return enrichWithResourceName(
+                shareMapper.toShareResponse(share), share.getResourceType(), share.getOwnerId());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Verify Share Password
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Verifies the password of a password-protected public share link.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public ShareResponse verifySharePassword(String token, String password) {
+        Share share = findShareByToken(token);
+        validateShareNotExpired(share);
+        requireCorrectPassword(share, password);
+
+        log.info("Share password verified: token={}, resourceId={}", token, share.getResourceId());
+        return enrichWithResourceName(
+                shareMapper.toShareResponse(share), share.getResourceType(), share.getOwnerId());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Public Download / Preview
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Streams a shared file's content for download through a public link.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public SharedFileContent downloadPublicShare(String token, String password) {
+        Share share = requireShareableFile(token, password);
+
+        // VIEW shares are preview-only — downloading is reserved for
+        // DOWNLOAD / EDIT permissions (matches the frontend share dialog).
+        if (share.getPermission() == Permission.VIEW) {
+            log.warn("Download denied for view-only share: token={}", token);
+            throw new UnauthorizedShareAccessException(
+                    "This share is view-only — downloading is disabled");
+        }
+
+        return fetchSharedContent(share, false);
+    }
+
+    /**
+     * Streams a shared file's content for in-browser preview through a public
+     * link. Every permission level may preview.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public SharedFileContent previewPublicShare(String token, String password) {
+        Share share = requireShareableFile(token, password);
+        return fetchSharedContent(share, true);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Public-access helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Resolves a FILE share by token and enforces expiry + password.
+     */
+    private Share requireShareableFile(String token, String password) {
+        Share share = findShareByToken(token);
+        validateShareNotExpired(share);
+        requireCorrectPassword(share, password);
+
+        if (share.getResourceType() != ResourceType.FILE) {
+            throw new ShareNotFoundException("Share not found with token: " + token);
+        }
+        return share;
+    }
+
+    /**
+     * Fetches the raw file content from the File Service and builds the
+     * response payload. Preview uses the preview endpoint (which rejects
+     * non-previewable types), download uses the download endpoint.
+     */
+    private SharedFileContent fetchSharedContent(Share share, boolean preview) {
+        Long fileId = Long.valueOf(share.getResourceId());
+        byte[] content;
+        try {
+            content = preview
+                    ? fileServiceClient.previewFileContent(fileId, share.getOwnerId())
+                    : fileServiceClient.downloadFileContent(fileId, share.getOwnerId());
+        } catch (Exception e) {
+            log.warn("Failed to fetch shared content: token={}, fileId={}, preview={}: {}",
+                    share.getShareToken(), fileId, preview, e.getMessage());
+            throw new ShareNotFoundException("The shared file is no longer available");
+        }
+
+        StandardResponse<FileResponse> metadata =
+                fileServiceClient.getFileById(fileId, share.getOwnerId());
+        FileResponse file = metadata != null ? metadata.getData() : null;
+
+        return SharedFileContent.builder()
+                .originalFileName(file != null ? file.getOriginalFileName() : "shared-file")
+                .contentType(file != null && file.getFileType() != null
+                        ? file.getFileType()
+                        : "application/octet-stream")
+                .fileSize(content != null ? (long) content.length : 0L)
+                .content(content != null ? content : new byte[0])
+                .build();
+    }
+
+    /**
+     * Enforces the share-link password when one is set.
+     */
+    private void requireCorrectPassword(Share share, String password) {
+        if (share.getPasswordHash() == null || share.getPasswordHash().isBlank()) {
+            return;
+        }
+        if (password == null || password.isBlank()) {
+            throw new SharePasswordException("This link is password protected");
+        }
+        if (!hashPassword(password).equals(share.getPasswordHash())) {
+            throw new SharePasswordException("Incorrect share password");
+        }
+    }
+
+    /**
+     * Best-effort resolution of the shared resource's display name so the
+     * frontend can show "shared file.pdf" instead of a blank label.
+     * <p>
+     * The resource owner's ID is forwarded so the owning service's ownership
+     * checks still run on the internal metadata lookups.
+     */
+    private ShareResponse enrichWithResourceName(
+            ShareResponse response, ResourceType type, Long ownerId) {
+        if (response.getResourceName() != null) {
+            return response;
+        }
+        try {
+            if (type == ResourceType.FILE) {
+                StandardResponse<FileResponse> file = fileServiceClient.getFileById(
+                        Long.valueOf(response.getResourceId()), ownerId);
+                if (file != null && file.getData() != null) {
+                    response.setResourceName(file.getData().getOriginalFileName());
+                }
+            } else {
+                StandardResponse<FolderResponse> folder =
+                        folderServiceClient.getFolderById(response.getResourceId(), ownerId);
+                if (folder != null && folder.getData() != null) {
+                    response.setResourceName(folder.getData().getName());
+                }
+            }
+        } catch (Exception e) {
+            log.debug("Could not resolve resource name for share id={}: {}",
+                    response.getId(), e.getMessage());
+        }
+        return response;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -368,8 +556,9 @@ public class ShareServiceImpl implements ShareService {
      * @param resourceType     the type of the resource (FILE or FOLDER)
      * @param ownerId          the ID of the resource owner
      * @param sharedWithUserId the ID of the recipient user
-     * @param permission       the permission level (VIEW or EDIT)
+     * @param permission       the permission level (VIEW / DOWNLOAD / EDIT)
      * @param expiryDate       the optional expiry date
+     * @param password         the optional plain-text link password (hashed)
      * @return a new Share entity (not yet persisted)
      */
     private Share buildShare(
@@ -378,7 +567,8 @@ public class ShareServiceImpl implements ShareService {
             Long ownerId,
             Long sharedWithUserId,
             Permission permission,
-            LocalDateTime expiryDate) {
+            LocalDateTime expiryDate,
+            String password) {
 
         return Share.builder()
                 .resourceId(resourceId)
@@ -388,6 +578,7 @@ public class ShareServiceImpl implements ShareService {
                 .permission(permission)
                 .shareToken(UUID.randomUUID().toString())
                 .isPublic(false)
+                .passwordHash(password == null || password.isBlank() ? null : hashPassword(password))
                 .expiryDate(expiryDate)
                 .build();
     }
@@ -420,5 +611,44 @@ public class ShareServiceImpl implements ShareService {
                     log.warn("Share not found: shareId={}", shareId);
                     return new ShareNotFoundException("Share not found with id: " + shareId);
                 });
+    }
+
+    /**
+     * Internal helper to find a share by its public token or throw
+     * {@link ShareNotFoundException}.
+     *
+     * @param token the public share token
+     * @return the found Share entity
+     * @throws ShareNotFoundException if no record exists with the given token
+     */
+    private Share findShareByToken(String token) {
+        return shareRepository.findByShareToken(token)
+                .orElseThrow(() -> {
+                    log.warn("Share not found: token={}", token);
+                    return new ShareNotFoundException("Share not found with token: " + token);
+                });
+    }
+
+    /**
+     * SHA-256 hash of a share-link password (salted with the token-less
+     * constant salt is unnecessary here — the password itself is high-entropy
+     * user input and the hash is only used for equality checks).
+     */
+    private String hashPassword(String password) {
+        try {
+            MessageDigest md = MessageDigest.getInstance("SHA-256");
+            byte[] digest = md.digest(password.getBytes(StandardCharsets.UTF_8));
+            return HexFormat.of().formatHex(digest);
+        } catch (Exception e) {
+            throw new RuntimeException("SHA-256 not available", e);
+        }
+    }
+
+    /** Random hex helper kept for symmetric generation (reserved for future use). */
+    @SuppressWarnings("unused")
+    private String randomHex(int byteCount) {
+        byte[] bytes = new byte[byteCount];
+        new SecureRandom().nextBytes(bytes);
+        return HexFormat.of().formatHex(bytes);
     }
 }

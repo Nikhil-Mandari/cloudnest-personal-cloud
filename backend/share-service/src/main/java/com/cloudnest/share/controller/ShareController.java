@@ -2,13 +2,18 @@ package com.cloudnest.share.controller;
 
 import com.cloudnest.share.dto.ShareResponse;
 import com.cloudnest.share.dto.ShareWithUserRequest;
+import com.cloudnest.share.dto.SharedFileContent;
 import com.cloudnest.share.dto.UpdatePermissionRequest;
 import com.cloudnest.share.service.ShareService;
 import com.cloudnest.share.util.StandardResponse;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.core.io.ByteArrayResource;
+import org.springframework.core.io.Resource;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -178,6 +183,108 @@ public class ShareController {
                         .data(response)
                         .path(httpRequest.getRequestURI())
                         .build());
+    }
+
+    /**
+     * Verifies the password of a password-protected public share link.
+     * <p>
+     * Does not require authentication (the share token is the credential).
+     *
+     * @param token       the public share token
+     * @param password    the plain-text password supplied by the visitor
+     * @param httpRequest the current HTTP request (for building response path)
+     * @return 200 OK with the share details once the password is verified
+     */
+    @PostMapping("/public/{token}/verify-password")
+    public ResponseEntity<StandardResponse<ShareResponse>> verifySharePassword(
+            @PathVariable String token,
+            @RequestBody(required = false) com.cloudnest.share.dto.VerifySharePasswordRequest body,
+            HttpServletRequest httpRequest) {
+
+        log.info("POST /api/shares/public/{}/verify-password", token);
+
+        String password = body != null ? body.getPassword() : null;
+        ShareResponse response = shareService.verifySharePassword(token, password);
+
+        return ResponseEntity.ok(
+                StandardResponse.<ShareResponse>builder()
+                        .success(true)
+                        .message("Share password verified successfully")
+                        .data(response)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Streams the shared file's content for download through a public link.
+     * <p>
+     * Does not require authentication; the share token (and, when set, the
+     * link password via the {@code X-Share-Password} header) gates access.
+     * VIEW-only shares reject downloads.
+     *
+     * @param token    the public share token
+     * @param password the link password (required when the link is protected)
+     * @return the file content as an attachment
+     */
+    @GetMapping("/public/{token}/download")
+    public ResponseEntity<Resource> downloadPublicShare(
+            @PathVariable String token,
+            @RequestHeader(value = "X-Share-Password", required = false) String password) {
+
+        log.info("GET /api/shares/public/{}/download", token);
+
+        SharedFileContent content = shareService.downloadPublicShare(token, password);
+
+        return ResponseEntity.ok()
+                .contentType(parseContentType(content.getContentType()))
+                .contentLength(content.getFileSize())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "attachment; filename=\"" + safeFileName(content.getOriginalFileName()) + "\"")
+                .body(new ByteArrayResource(content.getContent()));
+    }
+
+    /**
+     * Streams the shared file's content for in-browser preview through a
+     * public link. Does not require authentication.
+     *
+     * @param token    the public share token
+     * @param password the link password (required when the link is protected)
+     * @return the file content inline
+     */
+    @GetMapping("/public/{token}/preview")
+    public ResponseEntity<Resource> previewPublicShare(
+            @PathVariable String token,
+            @RequestHeader(value = "X-Share-Password", required = false) String password) {
+
+        log.info("GET /api/shares/public/{}/preview", token);
+
+        SharedFileContent content = shareService.previewPublicShare(token, password);
+
+        return ResponseEntity.ok()
+                .contentType(parseContentType(content.getContentType()))
+                .contentLength(content.getFileSize())
+                .header(HttpHeaders.CONTENT_DISPOSITION,
+                        "inline; filename=\"" + safeFileName(content.getOriginalFileName()) + "\"")
+                .body(new ByteArrayResource(content.getContent()));
+    }
+
+    // ── Private helpers ────────────────────────────────────────────────────────
+
+    private MediaType parseContentType(String contentType) {
+        try {
+            return MediaType.parseMediaType(
+                    contentType == null || contentType.isBlank()
+                            ? "application/octet-stream"
+                            : contentType);
+        } catch (Exception e) {
+            return MediaType.APPLICATION_OCTET_STREAM;
+        }
+    }
+
+    private String safeFileName(String fileName) {
+        return (fileName == null || fileName.isBlank())
+                ? "shared-file"
+                : fileName.replaceAll("[\\r\\n\"]", "_");
     }
 
     /**
