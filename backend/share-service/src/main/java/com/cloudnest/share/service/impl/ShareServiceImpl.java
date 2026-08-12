@@ -25,7 +25,10 @@ import com.cloudnest.share.util.StandardResponse;
 import feign.FeignException;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -49,23 +52,52 @@ import java.util.stream.Collectors;
 @Transactional
 public class ShareServiceImpl implements ShareService {
 
+    /**
+     * Striped monitors for share-creation critical sections. Two concurrent
+     * "share this resource with this user" requests for the same pair would
+     * otherwise both pass the duplicate check before either insert commits
+     * (check-then-insert race), creating duplicate share records and tokens
+     * from a single user action (e.g. a double-click on "Create link"). A
+     * fixed stripe array keeps memory bounded; the JVM-level lock is
+     * sufficient because the service runs as a single instance.
+     */
+    private static final Object[] SHARE_CREATION_LOCKS = new Object[64];
+
+    static {
+        for (int i = 0; i < SHARE_CREATION_LOCKS.length; i++) {
+            SHARE_CREATION_LOCKS[i] = new Object();
+        }
+    }
+
     private final ShareRepository shareRepository;
     private final ShareMapper shareMapper;
     private final UserServiceClient userServiceClient;
     private final FileServiceClient fileServiceClient;
     private final FolderServiceClient folderServiceClient;
 
+    /**
+     * Runs the duplicate-check + insert as its own transaction that COMMITS
+     * before the striped monitor is released. Without this, the class-level
+     * {@code @Transactional} defers the commit until after the method (and the
+     * lock) exits, so a concurrent request would still query an uncommitted
+     * row and both inserts would succeed.
+     */
+    private final TransactionTemplate shareCreationTransaction;
+
     public ShareServiceImpl(
             ShareRepository shareRepository,
             ShareMapper shareMapper,
             UserServiceClient userServiceClient,
             FileServiceClient fileServiceClient,
-            FolderServiceClient folderServiceClient) {
+            FolderServiceClient folderServiceClient,
+            PlatformTransactionManager transactionManager) {
         this.shareRepository = shareRepository;
         this.shareMapper = shareMapper;
         this.userServiceClient = userServiceClient;
         this.fileServiceClient = fileServiceClient;
         this.folderServiceClient = folderServiceClient;
+        this.shareCreationTransaction = new TransactionTemplate(transactionManager);
+        this.shareCreationTransaction.setPropagationBehavior(Propagation.REQUIRES_NEW.value());
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -115,27 +147,32 @@ public class ShareServiceImpl implements ShareService {
         // ── Resolve the recipient user ──────────────────────────────────────────
         Long recipientId = resolveRecipientUserId(request);
 
-        // ── Check for duplicate share ───────────────────────────────────────────
-        if (shareRepository.existsByResourceIdAndResourceTypeAndSharedWithUserId(
-                String.valueOf(fileId), ResourceType.FILE, recipientId)) {
-            log.warn("Share file failed: duplicate share for fileId={}, userId={}",
-                    fileId, recipientId);
-            throw new DuplicateShareException(
-                    "This file is already shared with the specified user");
+        // ── Check for duplicate share + persist atomically ──────────────────────
+        // Guarded by the striped monitor so two concurrent requests for the same
+        // resource/recipient pair cannot both pass the duplicate check.
+        Share saved;
+        synchronized (shareCreationLock(
+                ResourceType.FILE.name(), String.valueOf(fileId), recipientId)) {
+            saved = shareCreationTransaction.execute(status -> {
+                if (shareRepository.existsByResourceIdAndResourceTypeAndSharedWithUserId(
+                        String.valueOf(fileId), ResourceType.FILE, recipientId)) {
+                    log.warn("Share file failed: duplicate share for fileId={}, userId={}",
+                            fileId, recipientId);
+                    throw new DuplicateShareException(
+                            "This file is already shared with the specified user");
+                }
+
+                return shareRepository.save(buildShare(
+                        String.valueOf(fileId),
+                        ResourceType.FILE,
+                        ownerId,
+                        recipientId,
+                        request.getPermission(),
+                        request.getExpiryDate(),
+                        request.getPassword()
+                ));
+            });
         }
-
-        // ── Create and persist the share ────────────────────────────────────────
-        Share share = buildShare(
-                String.valueOf(fileId),
-                ResourceType.FILE,
-                ownerId,
-                recipientId,
-                request.getPermission(),
-                request.getExpiryDate(),
-                request.getPassword()
-        );
-
-        Share saved = shareRepository.save(share);
         log.info("File shared successfully: id={}, fileId={}, sharedWithUserId={}, token={}, hasPassword={}",
                 saved.getId(), fileId, recipientId, saved.getShareToken(), saved.getPasswordHash() != null);
 
@@ -187,27 +224,32 @@ public class ShareServiceImpl implements ShareService {
         // ── Resolve the recipient user ──────────────────────────────────────────
         Long recipientId = resolveRecipientUserId(request);
 
-        // ── Check for duplicate share ───────────────────────────────────────────
-        if (shareRepository.existsByResourceIdAndResourceTypeAndSharedWithUserId(
-                folderId, ResourceType.FOLDER, recipientId)) {
-            log.warn("Share folder failed: duplicate share for folderId={}, userId={}",
-                    folderId, recipientId);
-            throw new DuplicateShareException(
-                    "This folder is already shared with the specified user");
+        // ── Check for duplicate share + persist atomically ──────────────────────
+        // Guarded by the striped monitor so two concurrent requests for the same
+        // resource/recipient pair cannot both pass the duplicate check.
+        Share saved;
+        synchronized (shareCreationLock(
+                ResourceType.FOLDER.name(), folderId, recipientId)) {
+            saved = shareCreationTransaction.execute(status -> {
+                if (shareRepository.existsByResourceIdAndResourceTypeAndSharedWithUserId(
+                        folderId, ResourceType.FOLDER, recipientId)) {
+                    log.warn("Share folder failed: duplicate share for folderId={}, userId={}",
+                            folderId, recipientId);
+                    throw new DuplicateShareException(
+                            "This folder is already shared with the specified user");
+                }
+
+                return shareRepository.save(buildShare(
+                        folderId,
+                        ResourceType.FOLDER,
+                        ownerId,
+                        recipientId,
+                        request.getPermission(),
+                        request.getExpiryDate(),
+                        request.getPassword()
+                ));
+            });
         }
-
-        // ── Create and persist the share ────────────────────────────────────────
-        Share share = buildShare(
-                folderId,
-                ResourceType.FOLDER,
-                ownerId,
-                recipientId,
-                request.getPermission(),
-                request.getExpiryDate(),
-                request.getPassword()
-        );
-
-        Share saved = shareRepository.save(share);
         log.info("Folder shared successfully: id={}, folderId={}, sharedWithUserId={}, token={}, hasPassword={}",
                 saved.getId(), folderId, recipientId, saved.getShareToken(), saved.getPasswordHash() != null);
 
@@ -495,6 +537,14 @@ public class ShareServiceImpl implements ShareService {
     // ─────────────────────────────────────────────────────────────────────────
     // Private Helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Returns the monitor guarding share creation for a resource/recipient pair.
+     */
+    private Object shareCreationLock(String resourceType, String resourceId, Long recipientId) {
+        int hash = (resourceType + ":" + resourceId + ":" + recipientId).hashCode();
+        return SHARE_CREATION_LOCKS[Math.floorMod(hash, SHARE_CREATION_LOCKS.length)];
+    }
 
     /**
      * Resolves the recipient user ID from the share request.
