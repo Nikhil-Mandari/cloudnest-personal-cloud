@@ -4,13 +4,13 @@ import {
   Bell,
   BarChart3,
   CircleHelp,
+  CreditCard,
   Files,
   FolderOpen,
   LayoutDashboard,
   Link2,
   PanelLeftClose,
   PanelLeftOpen,
-  ScrollText,
   Settings,
   Share2,
   ShieldCheck,
@@ -44,7 +44,7 @@ const MAIN_NAV: readonly NavItem[] = [
 
 const INSIGHTS_NAV: readonly NavItem[] = [
   { label: 'Analytics', to: APP_ROUTES.analytics, icon: BarChart3 },
-  { label: 'Audit logs', to: APP_ROUTES.auditLogs, icon: ScrollText },
+  { label: 'Storage Plans', to: APP_ROUTES.plans, icon: CreditCard },
 ];
 
 const ACCOUNT_NAV: readonly NavItem[] = [

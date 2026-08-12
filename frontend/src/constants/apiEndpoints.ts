@@ -111,6 +111,16 @@ export const API_ENDPOINTS = {
     // ── Phase 5: clear read notifications ─────────────────────────────────
     clearRead: '/notifications/read-all',
   },
+  // ── Phase 7: billing (plans, subscriptions, payments) ────────────────────
+  billing: {
+    plans: '/billing/plans',
+    subscription: '/billing/subscription',
+    quota: '/billing/quota',
+    orders: '/billing/orders',
+    createOrder: '/billing/orders',
+    verifyOrder: '/billing/orders/verify',
+    cancelOrder: (orderUuid: string) => `/billing/orders/${orderUuid}/cancel`,
+  },
   // ── Phase 4: admin dashboard ─────────────────────────────────────────────
   admin: {
     systemHealth: '/admin/system/health',

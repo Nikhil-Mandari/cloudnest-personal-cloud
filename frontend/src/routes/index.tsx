@@ -8,7 +8,6 @@ import { GuestRoute } from './GuestRoute';
 import {
   AboutPage,
   AnalyticsPage,
-  AuditLogsPage,
   DashboardPage,
   FilesPage,
   FoldersPage,
@@ -23,6 +22,7 @@ import {
   SecurityPage,
   SettingsPage,
   SharedPage,
+  StoragePlansPage,
   TrashPage,
   VerifyOtpPage,
 } from './pages';
@@ -77,7 +77,7 @@ export const router = createBrowserRouter([
           { path: APP_ROUTES.settings, element: <SettingsPage /> },
           { path: APP_ROUTES.notifications, element: <NotificationsPage /> },
           { path: APP_ROUTES.analytics, element: <AnalyticsPage /> },
-          { path: APP_ROUTES.auditLogs, element: <AuditLogsPage /> },
+          { path: APP_ROUTES.plans, element: <StoragePlansPage /> },
           { path: APP_ROUTES.security, element: <SecurityPage /> },
           { path: APP_ROUTES.about, element: <AboutPage /> },
         ],

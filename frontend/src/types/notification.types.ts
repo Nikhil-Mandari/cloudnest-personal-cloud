@@ -23,7 +23,11 @@ export type NotificationType =
   | 'TWO_FACTOR_DISABLED'
   | 'BACKUP_CODES_REGENERATED'
   | 'PASSKEY_REGISTERED'
-  | 'PASSKEY_REMOVED';
+  | 'PASSKEY_REMOVED'
+  // ── Phase 7: billing & payments ─────────────────────────────────────────
+  | 'PAYMENT_SUCCESS'
+  | 'PAYMENT_FAILED'
+  | 'PLAN_UPGRADED';
 
 export interface AppNotification {
   id: number;

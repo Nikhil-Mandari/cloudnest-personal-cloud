@@ -49,11 +49,11 @@ export const SettingsPage = lazy(() =>
 export const AnalyticsPage = lazy(() =>
   import('@/pages/analytics/AnalyticsPage').then((m) => ({ default: m.AnalyticsPage })),
 );
-export const AuditLogsPage = lazy(() =>
-  import('@/pages/audit/AuditLogsPage').then((m) => ({ default: m.AuditLogsPage })),
-);
 export const SecurityPage = lazy(() =>
   import('@/pages/security/SecurityPage').then((m) => ({ default: m.SecurityPage })),
+);
+export const StoragePlansPage = lazy(() =>
+  import('@/pages/billing/StoragePlansPage').then((m) => ({ default: m.StoragePlansPage })),
 );
 export const AboutPage = lazy(() =>
   import('@/pages/about/AboutPage').then((m) => ({ default: m.AboutPage })),

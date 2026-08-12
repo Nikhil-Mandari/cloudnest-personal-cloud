@@ -1,15 +1,16 @@
 import { useState } from 'react';
 import {
   BellRing,
-  Fingerprint,
   Laptop,
+  Loader2,
+  LocateFixed,
   LogOut,
+  MapPin,
   Monitor,
+  RefreshCw,
   ShieldCheck,
-  ShieldX,
   Smartphone,
   Tablet,
-  Trash2,
   UserX,
   type LucideIcon,
 } from 'lucide-react';
@@ -18,7 +19,6 @@ import { EmptyState } from '@/components/common/EmptyState';
 import { ErrorState } from '@/components/common/ErrorState';
 import { PageHeader } from '@/components/common/PageHeader';
 import { Loader } from '@/components/common/Loader';
-import { PasskeysPanel, TwoFactorPanel } from '@/components/security/MfaPanels';
 import { Button } from '@/components/ui/Button';
 import { Card, CardBody, CardHeader } from '@/components/ui/Card';
 import {
@@ -27,19 +27,16 @@ import {
   useSecurityMutations,
   useSecurityOverview,
   useSessions,
-  useTrustedDevices,
 } from '@/hooks/useSecurity';
-import type { SessionInfo, TrustedDeviceInfo } from '@/types';
+import { useLocationStore } from '@/store/locationStore';
+import type { SessionInfo } from '@/types';
 import { cn } from '@/utils/cn';
 import { formatRelativeTime } from '@/utils/format';
 
-type Tab = 'overview' | 'sessions' | 'devices' | 'history' | 'logs' | 'mfa';
+type Tab = 'sessions' | 'history' | 'logs';
 
 const TABS: readonly { id: Tab; label: string }[] = [
-  { id: 'overview', label: 'Overview' },
-  { id: 'mfa', label: '2FA & passkeys' },
   { id: 'sessions', label: 'Active sessions' },
-  { id: 'devices', label: 'Trusted devices' },
   { id: 'history', label: 'Login history' },
   { id: 'logs', label: 'Security log' },
 ];
@@ -59,29 +56,24 @@ function DeviceIcon({ type }: { type: SessionInfo['deviceType'] }) {
   );
 }
 
-function scoreColor(score: number): string {
-  if (score >= 80) return 'text-emerald-500';
-  if (score >= 50) return 'text-amber-500';
-  return 'text-rose-500';
-}
+const formatCoordinate = (value: number, positive: string, negative: string): string =>
+  `${Math.abs(value).toFixed(6)}° ${value >= 0 ? positive : negative}`;
 
 export function SecurityPage() {
-  const [tab, setTab] = useState<Tab>('overview');
+  const [tab, setTab] = useState<Tab>('sessions');
   const [historyPage, setHistoryPage] = useState(0);
   const [logsPage, setLogsPage] = useState(0);
 
-  const overview = useSecurityOverview();
   const sessions = useSessions();
-  const trustedDevices = useTrustedDevices();
   const loginHistory = useLoginHistory(historyPage);
   const securityLogs = useSecurityLogs(logsPage);
-  const { endSession, logoutAll, removeTrustedDevice } = useSecurityMutations();
+  const { endSession, logoutAll } = useSecurityMutations();
 
   return (
     <div className="space-y-6">
       <PageHeader
         title="Security"
-        description="Protect your account, review sign-ins and manage your devices."
+        description="Review your sign-ins, current location and security activity."
         actions={
           <Button
             variant="outline"
@@ -98,93 +90,8 @@ export function SecurityPage() {
         }
       />
 
-      {/* Security score banner */}
-      <Card>
-        <CardBody className="flex flex-wrap items-center gap-6">
-          {overview.isLoading ? (
-            <Loader className="py-8" />
-          ) : overview.isError ? (
-            <ErrorState
-              message="Couldn't load your security overview."
-              onRetry={() => void overview.refetch()}
-            />
-          ) : (
-            <>
-              <div
-                className={cn(
-                  'grid h-24 w-24 shrink-0 place-items-center rounded-full border-4',
-                  overview.data!.securityScore >= 80
-                    ? 'border-emerald-500/40 bg-emerald-500/10'
-                    : overview.data!.securityScore >= 50
-                      ? 'border-amber-500/40 bg-amber-500/10'
-                      : 'border-rose-500/40 bg-rose-500/10',
-                )}
-              >
-                <div className="text-center">
-                  <p className={cn('text-3xl font-bold', scoreColor(overview.data!.securityScore))}>
-                    {overview.data!.securityScore}
-                  </p>
-                  <p className="text-xs text-gray-400">/ 100</p>
-                </div>
-              </div>
-
-              <div className="min-w-0 flex-1 space-y-3">
-                <div>
-                  <h3 className="text-lg font-semibold text-gray-900 dark:text-white">
-                    Security score
-                  </h3>
-                  <p className="text-sm text-gray-500 dark:text-gray-400">
-                    {overview.data!.securityScore >= 80
-                      ? 'Great shape — keep it up.'
-                      : overview.data!.securityScore >= 50
-                        ? 'Decent, but a few easy wins remain.'
-                        : 'Your account needs attention.'}
-                  </p>
-                </div>
-
-                <div className="flex flex-wrap gap-2 text-xs">
-                  <StatusPill
-                    ok={overview.data!.emailVerified}
-                    okLabel="Email verified"
-                    badLabel="Email not verified"
-                  />
-                  <StatusPill
-                    ok={Boolean(overview.data!.twoFactorEnabled)}
-                    okLabel="2FA on"
-                    badLabel="2FA off"
-                  />
-                  <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                    {overview.data!.activeSessionCount} active session{overview.data!.activeSessionCount === 1 ? '' : 's'}
-                  </span>
-                  <span className="rounded-full bg-gray-100 px-2.5 py-1 font-medium text-gray-600 dark:bg-gray-800 dark:text-gray-300">
-                    {overview.data!.trustedDeviceCount} trusted device{overview.data!.trustedDeviceCount === 1 ? '' : 's'}
-                  </span>
-                  {overview.data!.failedLoginsLast7Days > 0 && (
-                    <span className="rounded-full bg-rose-100 px-2.5 py-1 font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">
-                      {overview.data!.failedLoginsLast7Days} failed attempt{overview.data!.failedLoginsLast7Days === 1 ? '' : 's'} this week
-                    </span>
-                  )}
-                </div>
-              </div>
-
-              <div className="hidden text-sm text-gray-500 md:block dark:text-gray-400">
-                <p>
-                  Last login:{' '}
-                  <span className="font-medium text-gray-700 dark:text-gray-200">
-                    {overview.data!.lastLoginAt ? formatRelativeTime(overview.data!.lastLoginAt) : '—'}
-                  </span>
-                </p>
-                <p>
-                  Password changed:{' '}
-                  <span className="font-medium text-gray-700 dark:text-gray-200">
-                    {overview.data!.passwordChangedAt ? formatRelativeTime(overview.data!.passwordChangedAt) : 'never'}
-                  </span>
-                </p>
-              </div>
-            </>
-          )}
-        </CardBody>
-      </Card>
+      {/* Current sign-in + location */}
+      <CurrentSignInCard />
 
       {/* Tabs */}
       <div className="flex gap-1 overflow-x-auto rounded-xl border border-gray-200/80 bg-white p-1 dark:border-gray-800 dark:bg-gray-900">
@@ -205,80 +112,7 @@ export function SecurityPage() {
         ))}
       </div>
 
-      {tab === 'overview' && (
-        <div className="grid gap-6 md:grid-cols-2">
-          <Card>
-            <CardHeader title="Account protection" description="Things you can turn on or fix." />
-            <CardBody className="space-y-4">
-              <ProtectionRow
-                icon={ShieldCheck}
-                title="Email verification"
-                detail={overview.data?.emailVerified ? 'Your email is verified.' : 'Verify your email to unlock everything.'}
-                ok={Boolean(overview.data?.emailVerified)}
-              />
-              <ProtectionRow
-                icon={Fingerprint}
-                title="Two-factor authentication"
-                detail={
-                  overview.data?.twoFactorEnabled
-                    ? 'A code from your authenticator app is required at sign-in.'
-                    : 'Add an authenticator app code for stronger protection.'
-                }
-                ok={Boolean(overview.data?.twoFactorEnabled)}
-              />
-              <ProtectionRow
-                icon={ShieldX}
-                title="Password strength"
-                detail={
-                  overview.data?.passwordChangedAt
-                    ? `Changed ${formatRelativeTime(overview.data.passwordChangedAt)}.`
-                    : 'Set a strong password from Profile → Change password.'
-                }
-                ok={Boolean(overview.data?.passwordChangedAt)}
-              />
-              <ProtectionRow
-                icon={BellRing}
-                title="Sign-in alerts"
-                detail="We email you about new and unknown-device sign-ins automatically."
-                ok
-              />
-            </CardBody>
-          </Card>
-
-          <Card>
-            <CardHeader title="Recent activity" description="A quick look at what happened lately." />
-            <CardBody className="space-y-3">
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Sign-ins recorded</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{overview.data?.totalLogins ?? '—'}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Failed attempts (7 days)</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{overview.data?.failedLoginsLast7Days ?? '—'}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Active sessions</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{overview.data?.activeSessionCount ?? '—'}</span>
-              </div>
-              <div className="flex items-center justify-between text-sm">
-                <span className="text-gray-500 dark:text-gray-400">Trusted devices</span>
-                <span className="font-semibold text-gray-900 dark:text-white">{overview.data?.trustedDeviceCount ?? '—'}</span>
-              </div>
-            </CardBody>
-          </Card>
-        </div>
-      )}
-
-      {tab === 'mfa' && (
-        <div className="space-y-6">
-          <TwoFactorPanel />
-          <PasskeysPanel />
-        </div>
-      )}
-
       {tab === 'sessions' && <SessionsTab sessions={sessions.data} isLoading={sessions.isLoading} onEnd={endSession.mutate} />}
-
-      {tab === 'devices' && <DevicesTab devices={trustedDevices.data} isLoading={trustedDevices.isLoading} onRemove={removeTrustedDevice.mutate} />}
 
       {tab === 'history' && (
         <HistoryTab
@@ -301,7 +135,185 @@ export function SecurityPage() {
   );
 }
 
-// ── Sub-components ─────────────────────────────────────────────────────────
+// ── Current sign-in ─────────────────────────────────────────────────────────
+
+function CurrentSignInCard() {
+  const overview = useSecurityOverview();
+  const sessions = useSessions();
+  const current = sessions.data?.find((session) => session.current);
+
+  return (
+    <Card>
+      <CardHeader
+        title="Current sign-in"
+        description="Where you're signed in right now, plus your current location."
+        action={<ShieldCheck className="h-5 w-5 text-gray-400" />}
+      />
+      <CardBody>
+        <div className="grid gap-8 lg:grid-cols-2">
+          <div className="space-y-4">
+            {overview.isLoading ? (
+              <Loader className="py-6" />
+            ) : overview.isError ? (
+              <ErrorState
+                message="Couldn't load your security overview."
+                onRetry={() => void overview.refetch()}
+              />
+            ) : (
+              <>
+                <div className="flex flex-wrap items-center gap-2">
+                  <StatusPill
+                    ok={Boolean(overview.data!.emailVerified)}
+                    okLabel="Email verified"
+                    badLabel="Email not verified"
+                  />
+                  {overview.data!.failedLoginsLast7Days > 0 && (
+                    <span className="rounded-full bg-rose-100 px-2.5 py-1 font-medium text-rose-700 dark:bg-rose-500/15 dark:text-rose-300">
+                      {overview.data!.failedLoginsLast7Days} failed attempt
+                      {overview.data!.failedLoginsLast7Days === 1 ? '' : 's'} this week
+                    </span>
+                  )}
+                </div>
+
+                {current ? (
+                  <div className="flex items-center gap-4 rounded-xl border border-gray-100 bg-gray-50/60 p-4 dark:border-gray-800 dark:bg-gray-900/60">
+                    <DeviceIcon type={current.deviceType} />
+                    <div className="min-w-0 flex-1">
+                      <p className="font-semibold text-gray-900 dark:text-white">
+                        {current.deviceName}
+                      </p>
+                      <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
+                        {[current.ipAddress, current.location].filter(Boolean).join(' · ')}
+                      </p>
+                      <p className="mt-0.5 text-xs text-gray-400 dark:text-gray-500">
+                        Signed in {formatRelativeTime(current.loginTime)} · Active{' '}
+                        {formatRelativeTime(current.lastActive)}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <p className="text-sm text-gray-500 dark:text-gray-400">
+                    No active session details available.
+                  </p>
+                )}
+
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="rounded-lg bg-gray-50 px-3 py-2.5 dark:bg-gray-900">
+                    <p className="text-[10px] tracking-wide text-gray-400 uppercase">Last login</p>
+                    <p className="mt-0.5 font-medium text-gray-900 dark:text-white">
+                      {overview.data!.lastLoginAt
+                        ? formatRelativeTime(overview.data!.lastLoginAt)
+                        : '—'}
+                    </p>
+                  </div>
+                  <div className="rounded-lg bg-gray-50 px-3 py-2.5 dark:bg-gray-900">
+                    <p className="text-[10px] tracking-wide text-gray-400 uppercase">
+                      Active sessions
+                    </p>
+                    <p className="mt-0.5 font-medium text-gray-900 dark:text-white">
+                      {overview.data!.activeSessionCount}
+                    </p>
+                  </div>
+                </div>
+              </>
+            )}
+          </div>
+
+          <LocationPanel />
+        </div>
+      </CardBody>
+    </Card>
+  );
+}
+
+function LocationPanel() {
+  const capture = useLocationStore((state) => state.capture);
+  const { status, latitude, longitude, accuracy, areaName, error } = useLocationStore();
+
+  return (
+    <div className="space-y-3">
+      <div className="flex items-center justify-between gap-2">
+        <p className="flex items-center gap-2 text-sm font-semibold text-gray-900 dark:text-white">
+          <MapPin className="text-brand-500 h-4 w-4" />
+          Current sign-in location
+        </p>
+        <Button
+          variant="ghost"
+          size="sm"
+          leftIcon={<RefreshCw className="h-3.5 w-3.5" />}
+          onClick={capture}
+          disabled={status === 'requesting'}
+        >
+          Refresh
+        </Button>
+      </div>
+
+      {status === 'requesting' && (
+        <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Detecting your location…
+        </div>
+      )}
+
+      {status === 'ready' && latitude !== null && longitude !== null && (
+        <div className="space-y-3">
+          {areaName && (
+            <p className="text-lg font-semibold text-gray-900 dark:text-white">{areaName}</p>
+          )}
+          <div className="grid grid-cols-2 gap-2">
+            <div className="rounded-lg bg-gray-50 px-3 py-2.5 dark:bg-gray-900">
+              <p className="text-[10px] tracking-wide text-gray-400 uppercase">Latitude</p>
+              <p className="mt-0.5 font-mono text-sm font-semibold text-gray-900 tabular-nums dark:text-white">
+                {formatCoordinate(latitude, 'N', 'S')}
+              </p>
+            </div>
+            <div className="rounded-lg bg-gray-50 px-3 py-2.5 dark:bg-gray-900">
+              <p className="text-[10px] tracking-wide text-gray-400 uppercase">Longitude</p>
+              <p className="mt-0.5 font-mono text-sm font-semibold text-gray-900 tabular-nums dark:text-white">
+                {formatCoordinate(longitude, 'E', 'W')}
+              </p>
+            </div>
+          </div>
+          {typeof accuracy === 'number' && (
+            <p className="text-xs text-gray-400 dark:text-gray-500">
+              Accurate to about {Math.round(accuracy)} m
+            </p>
+          )}
+        </div>
+      )}
+
+      {status === 'denied' && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">{error}</p>
+      )}
+
+      {(status === 'unavailable' || status === 'timeout') && (
+        <div className="space-y-3">
+          <p className="text-sm text-rose-600 dark:text-rose-400">{error}</p>
+          <Button variant="outline" size="sm" onClick={capture} leftIcon={<LocateFixed className="h-4 w-4" />}>
+            Try again
+          </Button>
+        </div>
+      )}
+
+      {status === 'unsupported' && (
+        <p className="text-sm text-amber-600 dark:text-amber-400">{error}</p>
+      )}
+
+      {status === 'idle' && (
+        <div className="space-y-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            Location is captured automatically after sign-in.
+          </p>
+          <Button variant="outline" size="sm" onClick={capture} leftIcon={<LocateFixed className="h-4 w-4" />}>
+            Detect location
+          </Button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── Shared bits ─────────────────────────────────────────────────────────────
 
 function StatusPill({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; badLabel: string }) {
   return (
@@ -318,28 +330,6 @@ function StatusPill({ ok, okLabel, badLabel }: { ok: boolean; okLabel: string; b
   );
 }
 
-function ProtectionRow({ icon: Icon, title, detail, ok }: { icon: LucideIcon; title: string; detail: string; ok: boolean }) {
-  return (
-    <div className="flex items-start gap-3">
-      <div
-        className={cn(
-          'grid h-10 w-10 shrink-0 place-items-center rounded-xl',
-          ok ? 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400' : 'bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400',
-        )}
-      >
-        <Icon className="h-5 w-5" />
-      </div>
-      <div className="min-w-0">
-        <p className="text-sm font-semibold text-gray-900 dark:text-white">{title}</p>
-        <p className="text-xs text-gray-500 dark:text-gray-400">{detail}</p>
-      </div>
-      <span className={cn('ml-auto mt-1 text-xs font-bold', ok ? 'text-emerald-500' : 'text-gray-400')}>
-        {ok ? 'ON' : '—'}
-      </span>
-    </div>
-  );
-}
-
 function SessionsTab({
   sessions,
   isLoading,
@@ -353,7 +343,13 @@ function SessionsTab({
     return <Loader className="py-16" />;
   }
   if (!sessions || sessions.length === 0) {
-    return <EmptyState icon={<Monitor className="h-7 w-7" />} title="No active sessions" description="Sessions appear here when you sign in from a device." />;
+    return (
+      <EmptyState
+        icon={<Monitor className="h-7 w-7" />}
+        title="No active sessions"
+        description="Sessions appear here when you sign in from a device."
+      />
+    );
   }
   return (
     <div className="space-y-3">
@@ -379,7 +375,8 @@ function SessionsTab({
                 {[session.ipAddress, session.location].filter(Boolean).join(' · ')}
               </p>
               <p className="text-xs text-gray-400 dark:text-gray-500">
-                Signed in {formatRelativeTime(session.loginTime)} · Active {formatRelativeTime(session.lastActive)}
+                Signed in {formatRelativeTime(session.loginTime)} · Active{' '}
+                {formatRelativeTime(session.lastActive)}
               </p>
             </div>
             {!session.current && (
@@ -392,61 +389,6 @@ function SessionsTab({
                 End session
               </Button>
             )}
-          </CardBody>
-        </Card>
-      ))}
-    </div>
-  );
-}
-
-function DevicesTab({
-  devices,
-  isLoading,
-  onRemove,
-}: {
-  devices: TrustedDeviceInfo[] | undefined;
-  isLoading: boolean;
-  onRemove: (id: number) => void;
-}) {
-  if (isLoading) {
-    return <Loader className="py-16" />;
-  }
-  if (!devices || devices.length === 0) {
-    return (
-      <EmptyState
-        icon={<ShieldCheck className="h-7 w-7" />}
-        title="No trusted devices"
-        description='Tick "Remember this device" at sign-in to skip the email code next time.'
-      />
-    );
-  }
-  return (
-    <div className="space-y-3">
-      {devices.map((device) => (
-        <Card key={device.id}>
-          <CardBody className="flex items-center gap-4">
-            <DeviceIcon type="OTHER" />
-            <div className="min-w-0 flex-1">
-              <p className="font-semibold text-gray-900 dark:text-white">{device.deviceName}</p>
-              <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
-                {device.browser} · {device.os} · {device.ipAddress ?? 'Unknown IP'}
-              </p>
-              <p className="text-xs text-gray-400 dark:text-gray-500">
-                Last used {formatRelativeTime(device.lastUsedAt)}
-              </p>
-            </div>
-            <Button
-              variant="ghost"
-              size="sm"
-              leftIcon={<Trash2 className="h-4 w-4" />}
-              onClick={() => {
-                if (window.confirm(`Stop trusting "${device.deviceName}"? It will need an email code again.`)) {
-                  onRemove(device.id);
-                }
-              }}
-            >
-              Remove
-            </Button>
           </CardBody>
         </Card>
       ))}
@@ -469,7 +411,13 @@ function HistoryTab({
     return <Loader className="py-16" />;
   }
   if (!data || data.content.length === 0) {
-    return <EmptyState icon={<BellRing className="h-7 w-7" />} title="No sign-ins recorded yet" description="Every successful and failed sign-in will show up here." />;
+    return (
+      <EmptyState
+        icon={<BellRing className="h-7 w-7" />}
+        title="No sign-ins recorded yet"
+        description="Every successful and failed sign-in will show up here."
+      />
+    );
   }
   return (
     <Card>
@@ -500,8 +448,12 @@ function HistoryTab({
                 </td>
                 <td className="px-6 py-3 text-gray-700 dark:text-gray-200">{entry.deviceName}</td>
                 <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{entry.location}</td>
-                <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">{entry.ipAddress ?? '—'}</td>
-                <td className="px-6 py-3 text-gray-500 dark:text-gray-400">{formatRelativeTime(entry.loginTime)}</td>
+                <td className="px-6 py-3 font-mono text-xs text-gray-500 dark:text-gray-400">
+                  {entry.ipAddress ?? '—'}
+                </td>
+                <td className="px-6 py-3 text-gray-500 dark:text-gray-400">
+                  {formatRelativeTime(entry.loginTime)}
+                </td>
               </tr>
             ))}
           </tbody>
@@ -527,7 +479,13 @@ function LogsTab({
     return <Loader className="py-16" />;
   }
   if (!data || data.content.length === 0) {
-    return <EmptyState icon={<ShieldCheck className="h-7 w-7" />} title="No security events yet" description="Security-relevant actions will appear here." />;
+    return (
+      <EmptyState
+        icon={<ShieldCheck className="h-7 w-7" />}
+        title="No security events yet"
+        description="Security-relevant actions will appear here."
+      />
+    );
   }
   return (
     <Card>
@@ -538,7 +496,9 @@ function LogsTab({
               <ShieldCheck className="h-4.5 w-4.5" />
             </div>
             <div className="min-w-0 flex-1">
-              <p className="text-sm font-semibold text-gray-900 dark:text-white">{formatAction(entry.action)}</p>
+              <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                {formatAction(entry.action)}
+              </p>
               {entry.details && <p className="text-xs text-gray-500 dark:text-gray-400">{entry.details}</p>}
             </div>
             <div className="text-right text-xs text-gray-400 dark:text-gray-500">
@@ -586,7 +546,6 @@ function formatAction(action: string): string {
     DEVICE_UNTRUSTED: 'Trusted device removed',
     ACCOUNT_ACTIVATED: 'Account activated',
     ACCOUNT_LOCKED: 'Account locked after failed attempts',
-    // ── Phase 6: 2FA & passkeys ───────────────────────────────────────────
     '2FA_ENABLED': 'Two-factor authentication enabled',
     '2FA_DISABLED': 'Two-factor authentication disabled',
     '2FA_VERIFIED': 'Two-factor code verified',

@@ -17,7 +17,7 @@ export const APP_ROUTES = {
   myShares: '/my-shares',
   trash: '/trash',
   analytics: '/analytics',
-  auditLogs: '/audit-logs',
+  plans: '/plans',
   profile: '/profile',
   settings: '/settings',
   security: '/security',

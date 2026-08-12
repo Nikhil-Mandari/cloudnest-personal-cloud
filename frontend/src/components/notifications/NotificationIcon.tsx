@@ -1,6 +1,8 @@
 import {
   Ban,
+  BadgeCheck,
   Bell,
+  CreditCard,
   FileUp,
   Fingerprint,
   FolderUp,
@@ -85,6 +87,19 @@ const TYPE_STYLES: Record<NotificationType, { icon: LucideIcon; className: strin
   PASSKEY_REMOVED: {
     icon: Fingerprint,
     className: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  },
+  // ── Phase 7: billing & payments ─────────────────────────────────────────
+  PAYMENT_SUCCESS: {
+    icon: BadgeCheck,
+    className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
+  },
+  PAYMENT_FAILED: {
+    icon: CreditCard,
+    className: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
+  },
+  PLAN_UPGRADED: {
+    icon: CreditCard,
+    className: 'bg-violet-500/10 text-violet-600 dark:text-violet-400',
   },
 };
 
