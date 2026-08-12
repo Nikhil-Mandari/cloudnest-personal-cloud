@@ -3,6 +3,7 @@ package com.cloudnest.file.controller;
 import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
+import com.cloudnest.file.dto.StorageOverviewResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
 import com.cloudnest.file.service.FileService;
@@ -164,6 +165,39 @@ public class FileController {
                         .success(true)
                         .message("Files retrieved successfully")
                         .data(files)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Returns the storage analytics overview for the authenticated user.
+     * <p>
+     * Literal two-segment path — it cannot collide with the single-segment
+     * {@code /{id}} mapping, just like {@code /search} and {@code /trash}.
+     */
+    @Operation(summary = "Storage analytics overview",
+            description = "Returns storage usage, file/folder/trash counts, largest files, " +
+                    "file-type breakdown and weekly/monthly upload trends for the authenticated user.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Storage overview retrieved successfully"),
+            @ApiResponse(responseCode = "401", description = "Missing user identity"),
+            @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
+    @GetMapping("/stats/overview")
+    public ResponseEntity<StandardResponse<StorageOverviewResponse>> getStorageOverview(
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("GET /api/files/stats/overview - userId={}", userIdHeader);
+
+        StorageOverviewResponse overview = fileService.getStorageOverview(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<StorageOverviewResponse>builder()
+                        .success(true)
+                        .message("Storage overview retrieved successfully")
+                        .data(overview)
                         .path(httpRequest.getRequestURI())
                         .build());
     }

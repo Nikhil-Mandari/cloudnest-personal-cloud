@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestHeader;
 
+import java.util.List;
+
 /**
  * OpenFeign client for communicating with the Folder Service.
  * <p>
@@ -30,5 +32,18 @@ public interface FolderServiceClient {
     @GetMapping("/{id}")
     StandardResponse<FolderResponse> getFolderById(
             @PathVariable("id") String id,
+            @RequestHeader("X-User-Id") Long ownerId);
+
+    /**
+     * Retrieves every non-deleted folder owned by the user.
+     * <p>
+     * Used by the storage analytics overview to count folders (including
+     * empty ones), which the file service does not own.
+     *
+     * @param ownerId the authenticated user's ID (forwarded as X-User-Id)
+     * @return the standard response containing the user's folders
+     */
+    @GetMapping
+    StandardResponse<List<FolderResponse>> getAllFolders(
             @RequestHeader("X-User-Id") Long ownerId);
 }

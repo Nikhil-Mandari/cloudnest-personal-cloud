@@ -6,6 +6,7 @@ import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
 import com.cloudnest.file.dto.FolderResponse;
+import com.cloudnest.file.dto.StorageOverviewResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
 import com.cloudnest.file.entity.FileMetadata;
@@ -32,9 +33,15 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.TextStyle;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -543,6 +550,171 @@ public class FileServiceImpl implements FileService {
         return results.stream()
                 .map(fileMapper::toMetadataResponse)
                 .collect(Collectors.toList());
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Storage analytics
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Builds the storage analytics overview for a user from the metadata in
+     * MySQL (folder count is delegated to the Folder Service via Feign).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public StorageOverviewResponse getStorageOverview(Long ownerId) {
+        log.debug("Building storage overview for ownerId={}", ownerId);
+
+        validateOwner(ownerId);
+
+        List<FileMetadata> active = fileMetadataRepository.findByOwnerId(ownerId).stream()
+                .filter(file -> file.getStatus() == FileStatus.ACTIVE)
+                .collect(Collectors.toList());
+        List<FileMetadata> trash = fileMetadataRepository.findByOwnerIdAndStatus(ownerId, FileStatus.DELETED);
+
+        long storageUsed = active.stream().mapToLong(FileMetadata::getFileSize).sum();
+        long trashSize = trash.stream().mapToLong(FileMetadata::getFileSize).sum();
+
+        List<StorageOverviewResponse.LargestFileInfo> largestFiles = active.stream()
+                .sorted(Comparator.comparing(FileMetadata::getFileSize).reversed())
+                .limit(5)
+                .map(file -> StorageOverviewResponse.LargestFileInfo.builder()
+                        .id(file.getId())
+                        .originalFileName(file.getOriginalFileName())
+                        .fileSize(file.getFileSize())
+                        // Category key (image/video/pdf/…) so the frontend can pick
+                        // the right icon without re-mapping the raw MIME type.
+                        .fileType(categorize(file.getContentType()))
+                        .folderId(file.getFolderId())
+                        .uploadedAt(file.getUploadedAt() != null ? file.getUploadedAt().toString() : null)
+                        .build())
+                .collect(Collectors.toList());
+
+        List<StorageOverviewResponse.FileTypeStat> fileTypeStats = buildFileTypeStats(active);
+
+        return StorageOverviewResponse.builder()
+                .storageUsed(storageUsed)
+                .fileCount(active.size())
+                .folderCount(fetchFolderCount(ownerId))
+                .trashFileCount(trash.size())
+                .trashSize(trashSize)
+                .largestFiles(largestFiles)
+                .fileTypeStats(fileTypeStats)
+                .weeklyUsage(buildTimeline(active, 7, true))
+                .monthlyUsage(buildTimeline(active, 6, false))
+                .build();
+    }
+
+    /**
+     * Groups active files by file-type category (mirrors the frontend buckets).
+     */
+    private List<StorageOverviewResponse.FileTypeStat> buildFileTypeStats(List<FileMetadata> files) {
+        Map<String, long[]> byCategory = new LinkedHashMap<>();
+        for (FileMetadata file : files) {
+            String category = categorize(file.getContentType());
+            long[] totals = byCategory.computeIfAbsent(category, k -> new long[2]);
+            totals[0] += file.getFileSize();
+            totals[1] += 1;
+        }
+        return byCategory.entrySet().stream()
+                .map(entry -> StorageOverviewResponse.FileTypeStat.builder()
+                        .category(entry.getKey())
+                        .bytes(entry.getValue()[0])
+                        .count(entry.getValue()[1])
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Builds a usage timeline (daily buckets for a week, monthly buckets for
+     * half a year) from the upload timestamps of active files.
+     */
+    private List<StorageOverviewResponse.UsagePoint> buildTimeline(
+            List<FileMetadata> files, int buckets, boolean daily) {
+        LocalDate today = LocalDate.now();
+        List<StorageOverviewResponse.UsagePoint> points = new ArrayList<>(buckets);
+        for (int offset = buckets - 1; offset >= 0; offset--) {
+            LocalDate bucketStart = daily ? today.minusDays(offset) : today.minusMonths(offset);
+            LocalDate bucketEnd = bucketStart.plusDays(1);
+            String label = daily
+                    ? bucketStart.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+                    : bucketStart.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+            long bytes = 0L;
+            for (FileMetadata file : files) {
+                LocalDateTime uploaded = file.getUploadedAt();
+                if (uploaded == null) {
+                    continue;
+                }
+                LocalDate date = uploaded.toLocalDate();
+                boolean inBucket = daily
+                        ? (!date.isBefore(bucketStart) && date.isBefore(bucketEnd))
+                        : (date.getYear() == bucketStart.getYear()
+                            && date.getMonth() == bucketStart.getMonth());
+                if (inBucket) {
+                    bytes += file.getFileSize();
+                }
+            }
+            points.add(StorageOverviewResponse.UsagePoint.builder()
+                    .label(label)
+                    .bytes(bytes)
+                    .build());
+        }
+        return points;
+    }
+
+    /**
+     * Maps a MIME content type to a display category used by the analytics UI.
+     */
+    private String categorize(String contentType) {
+        if (contentType == null) {
+            return "other";
+        }
+        String type = contentType.toLowerCase(Locale.ROOT);
+        if (type.startsWith("image/")) {
+            return "image";
+        }
+        if (type.startsWith("video/")) {
+            return "video";
+        }
+        if (type.startsWith("audio/")) {
+            return "audio";
+        }
+        if (type.equals("application/pdf")) {
+            return "pdf";
+        }
+        if (type.startsWith("application/zip")
+                || type.contains("gzip") || type.contains("tar")
+                || type.contains("rar") || type.contains("7z")
+                || type.contains("compress")) {
+            return "archive";
+        }
+        if (type.contains("json") || type.contains("xml")
+                || type.contains("javascript") || type.contains("yaml")
+                || type.contains("graphql") || type.contains("typescript")) {
+            return "code";
+        }
+        if (type.startsWith("text/")) {
+            return "document";
+        }
+        return "other";
+    }
+
+    /**
+     * Delegates the folder count to the Folder Service (best effort — the
+     * analytics endpoint must never fail because the folder count is missing).
+     */
+    private long fetchFolderCount(Long ownerId) {
+        try {
+            StandardResponse<List<FolderResponse>> response =
+                    folderServiceClient.getAllFolders(ownerId);
+            if (response == null || response.getData() == null) {
+                return 0L;
+            }
+            return response.getData().size();
+        } catch (Exception e) {
+            log.debug("Could not resolve folder count for ownerId={}: {}", ownerId, e.getMessage());
+            return 0L;
+        }
     }
 
     // ─────────────────────────────────────────────────────────────────────────

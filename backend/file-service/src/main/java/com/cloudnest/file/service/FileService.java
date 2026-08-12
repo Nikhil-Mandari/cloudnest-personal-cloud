@@ -3,6 +3,7 @@ package com.cloudnest.file.service;
 import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
+import com.cloudnest.file.dto.StorageOverviewResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
 import org.springframework.web.multipart.MultipartFile;
@@ -185,4 +186,14 @@ public interface FileService {
      * @return a list of matching lightweight file metadata responses
      */
     List<FileMetadataResponse> searchFiles(String query, Long ownerId);
+
+    /**
+     * Builds the storage analytics overview for the authenticated user:
+     * usage totals, file/folder/trash counts, largest files, file-type
+     * breakdown and weekly/monthly upload trends.
+     *
+     * @param ownerId the ID of the file owner
+     * @return the analytics overview scoped to the owner
+     */
+    StorageOverviewResponse getStorageOverview(Long ownerId);
 }
