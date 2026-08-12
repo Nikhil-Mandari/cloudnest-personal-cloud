@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { toast } from 'react-toastify';
 
 import { ErrorState } from '@/components/common/ErrorState';
@@ -8,6 +9,7 @@ import { SharesEmptyState } from '@/components/shares/ShareEmptyState';
 import { ShareTable } from '@/components/shares/ShareTable';
 import { ShareToolbar } from '@/components/shares/ShareToolbar';
 import { ShareGridSkeleton, ShareTableSkeleton } from '@/components/shares/ShareSkeletons';
+import { APP_ROUTES } from '@/constants/routes';
 import { useSharedWithMeQuery } from '@/hooks/useShare';
 import type {
   FileViewMode,
@@ -23,6 +25,7 @@ import { filterShares, sortShares } from '@/utils/share';
 
 export function SharedPage() {
   const { data: shares = [], isLoading, isError, error, refetch } = useSharedWithMeQuery();
+  const navigate = useNavigate();
 
   // Explorer UI state (transient — no persistence needed for this view).
   const [viewMode, setViewMode] = useState<FileViewMode>('list');
@@ -46,6 +49,11 @@ export function SharedPage() {
     } else {
       toast.error('Could not copy the link');
     }
+  };
+
+  /** Opens the shared item's page in the current tab (SPA navigation). */
+  const handleOpen = (share: ShareRecord) => {
+    navigate(APP_ROUTES.publicShare(share.shareToken));
   };
 
   return (
@@ -88,9 +96,17 @@ export function SharedPage() {
           onClearSearch={() => setSearchQuery('')}
         />
       ) : viewMode === 'grid' ? (
-        <ShareGrid shares={visibleShares} onCopyLink={(share) => void handleCopyLink(share)} />
+        <ShareGrid
+          shares={visibleShares}
+          onCopyLink={(share) => void handleCopyLink(share)}
+          onOpen={handleOpen}
+        />
       ) : (
-        <ShareTable shares={visibleShares} onCopyLink={(share) => void handleCopyLink(share)} />
+        <ShareTable
+          shares={visibleShares}
+          onCopyLink={(share) => void handleCopyLink(share)}
+          onOpen={handleOpen}
+        />
       )}
     </div>
   );

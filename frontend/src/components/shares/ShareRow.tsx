@@ -1,4 +1,4 @@
-import { Link2 } from 'lucide-react';
+import { ExternalLink, Link2 } from 'lucide-react';
 
 import type { ShareRecord } from '@/types';
 import { cn } from '@/utils/cn';
@@ -9,10 +9,12 @@ import { ExpiryBadge, PermissionBadge, ResourceBadge } from './ShareBadges';
 export interface ShareRowProps {
   share: ShareRecord;
   onCopyLink: (share: ShareRecord) => void;
+  /** Opens the share page in the current tab. */
+  onOpen: (share: ShareRecord) => void;
 }
 
 /** Table row for a single shared item. */
-export function ShareRow({ share, onCopyLink }: ShareRowProps) {
+export function ShareRow({ share, onCopyLink, onOpen }: ShareRowProps) {
   const expired = isShareExpired(share);
 
   return (
@@ -24,9 +26,17 @@ export function ShareRow({ share, onCopyLink }: ShareRowProps) {
     >
       {/* Type + resource */}
       <td className="py-2.5 pr-3">
-        <div className="flex min-w-0 items-center">
+        <button
+          type="button"
+          onClick={() => onOpen(share)}
+          title={expired ? 'This link has expired' : 'Open shared file'}
+          className="flex min-w-0 items-center gap-1.5 text-left transition-opacity hover:opacity-80"
+        >
           <ResourceBadge share={share} />
-        </div>
+          {!expired && (
+            <ExternalLink className="h-3.5 w-3.5 shrink-0 text-gray-300 opacity-0 transition-opacity group-hover:opacity-100 dark:text-gray-600" />
+          )}
+        </button>
       </td>
 
       {/* Permission */}

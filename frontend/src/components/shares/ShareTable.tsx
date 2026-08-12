@@ -4,10 +4,12 @@ import { ShareRow } from './ShareRow';
 export interface ShareTableProps {
   shares: ShareRecord[];
   onCopyLink: (share: ShareRecord) => void;
+  /** Opens the share page in the current tab. */
+  onOpen: (share: ShareRecord) => void;
 }
 
 /** Responsive table of shared items (grid of metadata rows). */
-export function ShareTable({ shares, onCopyLink }: ShareTableProps) {
+export function ShareTable({ shares, onCopyLink, onOpen }: ShareTableProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm shadow-gray-900/[0.03] dark:border-gray-800 dark:bg-gray-900">
       <div className="overflow-x-auto">
@@ -49,7 +51,7 @@ export function ShareTable({ shares, onCopyLink }: ShareTableProps) {
           </thead>
           <tbody>
             {shares.map((share) => (
-              <ShareRow key={share.id} share={share} onCopyLink={onCopyLink} />
+              <ShareRow key={share.id} share={share} onCopyLink={onCopyLink} onOpen={onOpen} />
             ))}
           </tbody>
         </table>

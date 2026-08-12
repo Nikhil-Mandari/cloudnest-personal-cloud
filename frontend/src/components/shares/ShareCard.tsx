@@ -1,5 +1,5 @@
 import { motion } from 'framer-motion';
-import { Clock, Link2, User } from 'lucide-react';
+import { Clock, ExternalLink, Link2, User } from 'lucide-react';
 
 import type { ShareRecord } from '@/types';
 import { cn } from '@/utils/cn';
@@ -10,10 +10,12 @@ import { ExpiryBadge, PermissionBadge, ResourceBadge } from './ShareBadges';
 export interface ShareCardProps {
   share: ShareRecord;
   onCopyLink: (share: ShareRecord) => void;
+  /** Opens the share page in the current tab. */
+  onOpen: (share: ShareRecord) => void;
 }
 
 /** Grid tile for a single shared item. */
-export function ShareCard({ share, onCopyLink }: ShareCardProps) {
+export function ShareCard({ share, onCopyLink, onOpen }: ShareCardProps) {
   const expired = isShareExpired(share);
 
   return (
@@ -32,7 +34,14 @@ export function ShareCard({ share, onCopyLink }: ShareCardProps) {
       )}
     >
       <div className="flex items-start justify-between gap-2">
-        <ResourceBadge share={share} />
+        <button
+          type="button"
+          onClick={() => onOpen(share)}
+          title={expired ? 'This link has expired' : 'Open shared file'}
+          className="min-w-0 flex-1 text-left transition-opacity hover:opacity-80"
+        >
+          <ResourceBadge share={share} />
+        </button>
         <PermissionBadge permission={share.permission} />
       </div>
 
@@ -49,9 +58,18 @@ export function ShareCard({ share, onCopyLink }: ShareCardProps) {
       </div>
 
       <div className="mt-3 flex items-center justify-between border-t border-gray-100 pt-2.5 dark:border-gray-800">
-        <span className="text-xs text-gray-400 dark:text-gray-500">
-          {expired ? 'Link expired' : 'Link active'}
-        </span>
+        {expired ? (
+          <span className="text-xs text-gray-400 dark:text-gray-500">Link expired</span>
+        ) : (
+          <button
+            type="button"
+            onClick={() => onOpen(share)}
+            className="text-brand-600 hover:text-brand-700 dark:text-brand-400 inline-flex items-center gap-1 text-xs font-medium transition-colors hover:underline"
+          >
+            <ExternalLink className="h-3 w-3" />
+            Open
+          </button>
+        )}
         <button
           type="button"
           onClick={() => onCopyLink(share)}

@@ -1,4 +1,4 @@
-import { ArrowDown, ArrowUp, ArrowUpDown, Clock, FolderPlus, LayoutGrid, List } from 'lucide-react';
+import { ArrowDown, ArrowUp, ArrowUpDown, Clock, CloudUpload, FolderPlus, LayoutGrid, List } from 'lucide-react';
 
 import { DropdownMenu, type DropdownOption } from '@/components/files/DropdownMenu';
 import { FilesSearchBar } from '@/components/files/SearchBar';
@@ -11,6 +11,8 @@ export interface FolderToolbarProps {
   /** Number of folders currently visible after search. */
   resultCount: number;
   onCreateFolder: () => void;
+  /** Optional: show an "Upload files" action (uploads into the open folder). */
+  onUpload?: () => void;
 }
 
 const SORT_OPTIONS: ReadonlyArray<DropdownOption<FolderSortKey>> = [
@@ -23,8 +25,8 @@ const KEY_LABELS: Record<FolderSortKey, string> = {
   date: 'Date modified',
 };
 
-/** Toolbar: new folder, instant search, sort and view toggle. */
-export function FolderToolbar({ resultCount, onCreateFolder }: FolderToolbarProps) {
+/** Toolbar: upload files, new folder, instant search, sort and view toggle. */
+export function FolderToolbar({ resultCount, onCreateFolder, onUpload }: FolderToolbarProps) {
   const viewMode = useFoldersStore((state) => state.viewMode);
   const setViewMode = useFoldersStore((state) => state.setViewMode);
   const searchQuery = useFoldersStore((state) => state.searchQuery);
@@ -40,6 +42,16 @@ export function FolderToolbar({ resultCount, onCreateFolder }: FolderToolbarProp
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
+        {onUpload && (
+          <Button
+            variant="outline"
+            onClick={onUpload}
+            leftIcon={<CloudUpload className="h-4 w-4" />}
+          >
+            Upload files
+          </Button>
+        )}
+
         <Button
           variant="primary"
           onClick={onCreateFolder}

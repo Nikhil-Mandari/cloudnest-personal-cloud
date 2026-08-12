@@ -6,10 +6,12 @@ import { ShareCard } from './ShareCard';
 export interface ShareGridProps {
   shares: ShareRecord[];
   onCopyLink: (share: ShareRecord) => void;
+  /** Opens the share page in the current tab. */
+  onOpen: (share: ShareRecord) => void;
 }
 
 /** Responsive animated grid of shared item cards. */
-export function ShareGrid({ shares, onCopyLink }: ShareGridProps) {
+export function ShareGrid({ shares, onCopyLink, onOpen }: ShareGridProps) {
   return (
     <motion.div
       layout
@@ -17,7 +19,7 @@ export function ShareGrid({ shares, onCopyLink }: ShareGridProps) {
     >
       <AnimatePresence mode="popLayout">
         {shares.map((share) => (
-          <ShareCard key={share.id} share={share} onCopyLink={onCopyLink} />
+          <ShareCard key={share.id} share={share} onCopyLink={onCopyLink} onOpen={onOpen} />
         ))}
       </AnimatePresence>
     </motion.div>

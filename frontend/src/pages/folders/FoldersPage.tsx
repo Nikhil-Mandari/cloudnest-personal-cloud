@@ -1,6 +1,6 @@
 import { useMemo, useState } from 'react';
 import { AnimatePresence, motion } from 'framer-motion';
-import { ArrowLeft, FolderOpen, FolderPlus, Home, Pencil, Trash2, X } from 'lucide-react';
+import { ArrowLeft, CloudUpload, FolderOpen, FolderPlus, Home, Pencil, Trash2, X } from 'lucide-react';
 
 import { Breadcrumb } from '@/components/common/Breadcrumb';
 import { ErrorState } from '@/components/common/ErrorState';
@@ -21,9 +21,11 @@ import {
   type ContextMenuItem,
   type ContextMenuPosition,
 } from '@/components/files/FileContextMenu';
+import { UploadModal } from '@/components/files/UploadModal';
 import { Button } from '@/components/ui/Button';
 import { useAuth } from '@/hooks/useAuth';
 import { useExplorerNavigation } from '@/hooks/useExplorerNavigation';
+import { useFileMutations } from '@/hooks/useFiles';
 import { useFolderContentsQuery, useFolderMutations } from '@/hooks/useFolders';
 import type { ExplorerCrumb } from '@/store/explorerStore';
 import { useFoldersStore } from '@/store/foldersStore';
@@ -44,6 +46,7 @@ export function FoldersPage() {
     refetch,
   } = useFolderContentsQuery(currentFolderId);
   const mutations = useFolderMutations();
+  const fileMutations = useFileMutations();
 
   // Explorer UI state (zustand).
   const viewMode = useFoldersStore((state) => state.viewMode);
@@ -60,6 +63,7 @@ export function FoldersPage() {
 
   // Local dialog / overlay state.
   const [newFolderOpen, setNewFolderOpen] = useState(false);
+  const [uploadOpen, setUploadOpen] = useState(false);
   const [contextMenu, setContextMenu] = useState<{
     folder: Folder;
     position: ContextMenuPosition;
@@ -198,6 +202,7 @@ export function FoldersPage() {
       <FolderToolbar
         resultCount={visibleFolders.length}
         onCreateFolder={() => setNewFolderOpen(true)}
+        onUpload={() => setUploadOpen(true)}
       />
 
       {/* Content: skeleton → error → empty → grid/list */}
@@ -223,17 +228,27 @@ export function FoldersPage() {
                 This folder is empty
               </p>
               <p className="mt-1 text-sm text-gray-400 dark:text-gray-500">
-                Create a sub-folder to keep organising your files.
+                Upload files or create a sub-folder to keep organising.
               </p>
             </div>
-            <Button
-              variant="primary"
-              size="sm"
-              onClick={() => setNewFolderOpen(true)}
-              leftIcon={<FolderPlus className="h-3.5 w-3.5" />}
-            >
-              New folder
-            </Button>
+            <div className="flex gap-2">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => setUploadOpen(true)}
+                leftIcon={<CloudUpload className="h-3.5 w-3.5" />}
+              >
+                Upload files
+              </Button>
+              <Button
+                variant="primary"
+                size="sm"
+                onClick={() => setNewFolderOpen(true)}
+                leftIcon={<FolderPlus className="h-3.5 w-3.5" />}
+              >
+                New folder
+              </Button>
+            </div>
           </div>
         ) : (
           <FoldersEmptyState
@@ -299,6 +314,12 @@ export function FoldersPage() {
       />
 
       {/* Dialogs */}
+      <UploadModal
+        open={uploadOpen}
+        onClose={() => setUploadOpen(false)}
+        folderId={currentFolderId}
+        onUploadComplete={fileMutations.invalidateFiles}
+      />
       <NewFolderDialog
         open={newFolderOpen}
         onClose={() => setNewFolderOpen(false)}

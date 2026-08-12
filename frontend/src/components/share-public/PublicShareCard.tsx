@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import {
   Download,
   Eye,
@@ -6,6 +6,7 @@ import {
   FolderOpen,
   Link2,
   Loader2,
+  Music,
   ShieldCheck,
   type LucideIcon,
 } from 'lucide-react';
@@ -17,7 +18,11 @@ import { Modal } from '@/components/ui/Modal';
 import { shareService } from '@/services/share.service';
 import type { FileTypeCategory, ShareRecord } from '@/types';
 import { cn } from '@/utils/cn';
-import { formatFileDate, getFileTypeCategory, isShareableImageName } from '@/utils/file';
+import {
+  formatFileDate,
+  getFileExtension,
+  getFileTypeCategory,
+} from '@/utils/file';
 
 export interface PublicShareCardProps {
   share: ShareRecord;
@@ -40,6 +45,54 @@ const CATEGORY_ICONS: Record<FileTypeCategory, LucideIcon> = {
   other: FileText,
 };
 
+type PreviewKind = 'image' | 'pdf' | 'video' | 'audio' | 'text' | 'unsupported';
+
+/** Browser-unrenderable formats must not attempt inline preview. */
+const UNRENDERABLE_EXTENSIONS = new Set(['heic', 'heif']);
+
+const TEXT_EXTENSIONS = new Set([
+  'txt',
+  'md',
+  'json',
+  'xml',
+  'yml',
+  'yaml',
+  'csv',
+  'log',
+  'js',
+  'ts',
+  'tsx',
+  'jsx',
+  'html',
+  'css',
+  'sh',
+  'py',
+  'java',
+  'c',
+  'cpp',
+  'cs',
+  'go',
+  'rs',
+  'rb',
+  'php',
+  'sql',
+]);
+
+/** Decides how (and whether) a shared file can be previewed in-browser. */
+function resolvePreviewKind(fileName: string): PreviewKind {
+  const extension = getFileExtension(fileName);
+  if (UNRENDERABLE_EXTENSIONS.has(extension)) {
+    return 'unsupported';
+  }
+  const category = getFileTypeCategory({ fileType: '', originalFileName: fileName });
+  if (category === 'image') return 'image';
+  if (category === 'video') return 'video';
+  if (category === 'audio') return 'audio';
+  if (extension === 'pdf') return 'pdf';
+  if (category === 'code' || TEXT_EXTENSIONS.has(extension)) return 'text';
+  return 'unsupported';
+}
+
 /**
  * Content card for the public share-link page: resource identity, access
  * metadata, and the Preview / Download / Copy actions. Folders show a note
@@ -55,14 +108,19 @@ export function PublicShareCard({
 }: PublicShareCardProps) {
   const isFolder = share.resourceType === 'FOLDER';
   const fileName = share.resourceName ?? '';
-  const isImage = !isFolder && isShareableImageName(fileName);
   const viewOnly = share.permission === 'VIEW';
   const CategoryIcon = isFolder ? FolderOpen : CATEGORY_ICONS[getFileTypeCategory({ fileType: '', originalFileName: fileName })];
-  const isPreviewable = isImage;
+  const previewKind = isFolder ? 'unsupported' : resolvePreviewKind(fileName);
+  const isPreviewable = previewKind !== 'unsupported';
 
-  // ── In-card image preview (streamed through the public download endpoint) ──
+  // ── In-card preview (streamed through the public preview endpoint) ─────────
   const [previewing, setPreviewing] = useState(false);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const [previewError, setPreviewError] = useState<string | null>(null);
+
+  // Decode text previews for display, keyed to the blob so a previous file's
+  // content never flashes while a new one loads.
+  const [textState, setTextState] = useState<{ blob: Blob; text: string } | null>(null);
 
   const closePreview = () => {
     setPreviewUrl((current) => {
@@ -71,22 +129,46 @@ export function PublicShareCard({
       }
       return null;
     });
+    setPreviewError(null);
+    setTextState(null);
   };
 
   const openPreview = async () => {
     setPreviewing(true);
+    setPreviewError(null);
     try {
       // The preview endpoint never increments the owner's download counter.
       const { data } = await shareService.previewPublicShare(share.shareToken, password ?? undefined);
       setPreviewUrl(URL.createObjectURL(data));
     } catch {
       const message = 'Could not load the preview. Please try downloading instead.';
+      setPreviewError(message);
       toast.error(message);
       onPreviewError?.(message);
     } finally {
       setPreviewing(false);
     }
   };
+
+  // Decode text-typed blobs for the <pre> view.
+  useEffect(() => {
+    if (!previewUrl || previewKind !== 'text') {
+      return;
+    }
+    let cancelled = false;
+    void fetch(previewUrl)
+      .then((response) => response.blob())
+      .then((blob) => blob.text())
+      .then((text) => {
+        if (!cancelled) {
+          setTextState({ blob: new Blob([text], { type: 'text/plain' }), text });
+        }
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [previewUrl, previewKind]);
 
   return (
     <div className="space-y-5">
@@ -153,47 +235,40 @@ export function PublicShareCard({
             <FolderOpen className="h-4 w-4 shrink-0" />
             Folder shares open inside CloudNest
           </p>
-        ) : viewOnly ? (
+        ) : (
           <>
-            {isPreviewable && (
+            {isPreviewable ? (
               <Button
                 variant="outline"
-                className="flex-1"
                 onClick={() => void openPreview()}
                 isLoading={previewing}
                 leftIcon={<Eye className="h-4 w-4" />}
               >
                 Preview
               </Button>
-            )}
-            {!isPreviewable && (
+            ) : (
               <p className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-center text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
                 <Eye className="h-4 w-4 shrink-0" />
+                Preview is not supported for this file type.
+              </p>
+            )}
+            {!viewOnly && (
+              <Button
+                variant="primary"
+                className="flex-1"
+                onClick={onDownload}
+                isLoading={downloading}
+                leftIcon={<Download className="h-4 w-4" />}
+              >
+                Download
+              </Button>
+            )}
+            {viewOnly && (
+              <p className="flex flex-1 items-center justify-center gap-2 rounded-lg bg-gray-50 px-3 py-2.5 text-center text-xs text-gray-500 dark:bg-gray-900 dark:text-gray-400">
+                <ShieldCheck className="h-4 w-4 shrink-0" />
                 This link is view-only — downloading is disabled
               </p>
             )}
-          </>
-        ) : (
-          <>
-            {isPreviewable && (
-              <Button
-                variant="outline"
-                onClick={() => void openPreview()}
-                isLoading={previewing}
-                leftIcon={<Eye className="h-4 w-4" />}
-              >
-                Preview
-              </Button>
-            )}
-            <Button
-              variant="primary"
-              className="flex-1"
-              onClick={onDownload}
-              isLoading={downloading}
-              leftIcon={<Download className="h-4 w-4" />}
-            >
-              Download
-            </Button>
           </>
         )}
         <Button variant="ghost" onClick={onCopyLink} leftIcon={<Link2 className="h-4 w-4" />}>
@@ -201,26 +276,73 @@ export function PublicShareCard({
         </Button>
       </div>
 
-      {/* Image preview modal */}
+      {/* In-page preview modal */}
       <Modal
         open={previewUrl !== null}
         onClose={closePreview}
         title={fileName}
-        description="Streamed preview of the shared file"
+        description={
+          previewKind === 'unsupported'
+            ? 'Preview is not supported for this file type'
+            : 'Streamed preview of the shared file'
+        }
         size="lg"
       >
-        <div className="flex items-center justify-center rounded-xl bg-gray-50 p-4 dark:bg-gray-950">
-          {previewUrl ? (
+        <div className="flex min-h-72 items-center justify-center overflow-hidden rounded-xl bg-gray-50 p-4 dark:bg-gray-950">
+          {previewError ? (
+            <div className="flex flex-col items-center gap-3 text-center">
+              <p className="max-w-sm text-sm text-rose-600 dark:text-rose-400">{previewError}</p>
+              {!viewOnly && (
+                <Button
+                  variant="outline"
+                  size="sm"
+                  leftIcon={<Download className="h-3.5 w-3.5" />}
+                  onClick={onDownload}
+                >
+                  Download file
+                </Button>
+              )}
+            </div>
+          ) : !previewUrl ? (
+            <div className="grid h-40 w-full place-items-center text-gray-400">
+              <Loader2 className="h-6 w-6 animate-spin" />
+            </div>
+          ) : previewKind === 'image' ? (
             <img
               src={previewUrl}
               alt={fileName}
               className="max-h-[65vh] w-full rounded-lg object-contain"
             />
-          ) : (
-            <div className="grid h-40 w-full place-items-center text-gray-400">
-              <Loader2 className="h-6 w-6 animate-spin" />
+          ) : previewKind === 'pdf' ? (
+            <iframe
+              src={previewUrl}
+              title={`${fileName} preview`}
+              className="h-[65vh] w-full rounded-lg border border-gray-200 bg-white dark:border-gray-700"
+            />
+          ) : previewKind === 'video' ? (
+            <video
+              key={previewUrl}
+              src={previewUrl}
+              controls
+              playsInline
+              className="max-h-[65vh] max-w-full rounded-lg bg-black"
+            >
+              Your browser does not support video preview.
+            </video>
+          ) : previewKind === 'audio' ? (
+            <div className="flex w-full max-w-md flex-col items-center gap-4 py-2">
+              <span className="from-brand-500 to-accent-600 grid h-16 w-16 place-items-center rounded-2xl bg-linear-to-br text-white shadow-lg shadow-brand-500/25">
+                <Music className="h-8 w-8" />
+              </span>
+              <audio src={previewUrl} controls className="w-full">
+                Your browser does not support audio preview.
+              </audio>
             </div>
-          )}
+          ) : previewKind === 'text' ? (
+            <pre className="bg-white dark:bg-gray-900 h-[55vh] w-full overflow-auto rounded-lg border border-gray-200 p-4 text-sm whitespace-pre-wrap text-gray-800 dark:border-gray-700 dark:text-gray-100">
+              {textState?.text ?? 'Loading…'}
+            </pre>
+          ) : null}
         </div>
         <p className="mt-4 truncate text-center text-xs text-gray-500 dark:text-gray-400">
           {fileName} · use Download to save the original file
