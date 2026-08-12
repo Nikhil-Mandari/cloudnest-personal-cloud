@@ -126,6 +126,21 @@ public class Notification {
         FOLDER_SHARED,
 
         /**
+         * A payment for a plan upgrade succeeded.
+         */
+        PAYMENT_SUCCESS,
+
+        /**
+         * A payment failed or was rejected.
+         */
+        PAYMENT_FAILED,
+
+        /**
+         * The user's storage plan was upgraded.
+         */
+        PLAN_UPGRADED,
+
+        /**
          * General system notification.
          */
         SYSTEM

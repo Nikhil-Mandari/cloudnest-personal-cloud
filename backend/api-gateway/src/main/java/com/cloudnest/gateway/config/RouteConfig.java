@@ -39,6 +39,9 @@ public class RouteConfig {
     @Value("${app.gateway.notification-service:notification-service}")
     private String notificationService;
 
+    @Value("${app.gateway.billing-service:billing-service}")
+    private String billingService;
+
     /**
      * Registers all downstream service routes.
      * Each route forwards the full request path to the downstream service
@@ -53,6 +56,7 @@ public class RouteConfig {
                 .route("folder-service", r -> apiRoute(r, "/api/folders/**",      folderService))
                 .route("share-service",  r -> apiRoute(r, "/api/shares/**",       shareService))
                 .route("notification-service", r -> apiRoute(r, "/api/notifications/**", notificationService))
+                .route("billing-service",   r -> apiRoute(r, "/api/billing/**",         billingService))
                 .build();
     }
 

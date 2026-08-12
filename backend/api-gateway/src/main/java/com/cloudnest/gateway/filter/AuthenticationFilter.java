@@ -53,6 +53,9 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
             "/api/auth/otp/resend",
             "/api/auth/oauth/",
             "/api/shares/public/",
+            // Payment-provider webhooks arrive without a JWT — the billing
+            // service verifies them by signature server-side.
+            "/api/billing/webhook/",
             "/actuator/",
             "/v3/api-docs",
             "/swagger-ui/",

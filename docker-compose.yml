@@ -316,6 +316,41 @@ services:
       start_period: 60s
 
   # ── 10. Share Service (Feign client) ────────────────────────
+  billing-service:
+    build:
+      context: ./backend/billing-service
+      dockerfile: Dockerfile
+    image: cloudnest/billing-service:latest
+    container_name: cloudnest-billing-service
+    restart: unless-stopped
+    environment:
+      CONFIG_SERVER_URL: http://config-server:8888
+      EUREKA_SERVER_URL: http://eureka-server:8761/eureka/
+      BILLING_DB_URL: "jdbc:mysql://mysql:3306/billing_db?createDatabaseIfNotExist=true&useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=UTC"
+      BILLING_DB_USERNAME: root
+      BILLING_DB_PASSWORD: ${MYSQL_ROOT_PASSWORD:-root}
+      RAZORPAY_KEY_ID: ${RAZORPAY_KEY_ID:-}
+      RAZORPAY_KEY_SECRET: ${RAZORPAY_KEY_SECRET:-}
+      RAZORPAY_WEBHOOK_SECRET: ${RAZORPAY_WEBHOOK_SECRET:-}
+      RAZORPAY_ENABLED: ${RAZORPAY_ENABLED:-false}
+    ports:
+      - "8087:8087"
+    networks:
+      - cloudnest-net
+    depends_on:
+      mysql:
+        condition: service_healthy
+      eureka-server:
+        condition: service_healthy
+      config-server:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "--silent", "http://localhost:8087/actuator/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 60s
+
   share-service:
     build:
       context: ./backend/share-service
