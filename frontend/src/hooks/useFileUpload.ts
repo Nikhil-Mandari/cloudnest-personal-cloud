@@ -82,11 +82,15 @@ export function useFileUpload({ folderId }: UseFileUploadOptions = {}) {
   }, [folderId]);
 
   const syncTasks = useCallback((updater: (prev: UploadTask[]) => UploadTask[]) => {
-    setTasks((prev) => {
-      const next = updater(prev);
-      tasksRef.current = next;
-      return next;
-    });
+    // Compute from the ref directly (not inside the setState updater) so
+    // `tasksRef.current` is current the moment this returns. The duplicate
+    // guard in `addFiles` reads the ref, and two adds in the same tick (drag &
+    // drop + dialog pick, a double-click, or a StrictMode double-firing of the
+    // initial-files effect) would otherwise both see the stale empty list and
+    // queue the same file twice — creating two uploads and two server records.
+    const next = updater(tasksRef.current);
+    tasksRef.current = next;
+    setTasks(next);
   }, []);
 
   const patchTask = useCallback(
