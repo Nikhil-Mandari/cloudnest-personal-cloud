@@ -59,7 +59,20 @@ public class FileServiceImpl implements FileService {
             "image/jpeg",
             "image/jpg",
             "image/gif",
-            "text/plain"
+            // Modern browsers render these directly; without them an uploaded
+            // WebP / AVIF / BMP / SVG / TIFF image shows "Preview not available"
+            // even though the frontend treats every image/* as previewable.
+            "image/webp",
+            "image/avif",
+            "image/bmp",
+            "image/svg+xml",
+            "image/tiff",
+            "image/x-tiff",
+            "image/x-icon",
+            "image/heic",
+            "image/heif",
+            "text/plain",
+            "text/markdown"
     );
 
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
@@ -177,10 +190,40 @@ public class FileServiceImpl implements FileService {
     }
 
     /**
+     * Retrieves the active file metadata records for a specific owner, scoped
+     * to one explorer location.
+     * <p>
+     * The explorer (Files / Folders pages) always sends a {@code folderId}
+     * hint: absent = global "all files" view, blank = root level, UUID = a
+     * specific folder. Without this scoping every folder view would show the
+     * user's complete file set, which surfaces as files appearing in the wrong
+     * location (and duplicated across views) after uploads and moves.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<FileMetadataResponse> getUserFiles(Long ownerId, String folderId) {
+        log.debug("Fetching files for ownerId={}, folderId={}", ownerId, folderId);
+
+        if (folderId == null) {
+            // Dashboard / global view — every active file.
+            return getUserFiles(ownerId);
+        }
+
+        List<FileMetadata> files = folderId.isBlank()
+                ? fileMetadataRepository.findRootFilesByOwnerId(ownerId)
+                : fileMetadataRepository.findByOwnerIdAndFolderIdAndStatus(ownerId, folderId);
+
+        return files.stream()
+                .map(fileMapper::toMetadataResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Retrieves detailed file metadata by its internal ID.
      * <p>
-     * Ownership is enforced when an owner context is supplied (external API
-     * calls); internal Feign consumers (e.g. Share Service) pass {@code null}.
+     * Ownership is always enforced: external callers arrive through the API
+     * Gateway with the authenticated user's ID, and internal Feign consumers
+     * (Share Service) forward the resource owner's ID.
      */
     @Override
     @Transactional(readOnly = true)

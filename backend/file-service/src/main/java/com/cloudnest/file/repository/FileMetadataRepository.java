@@ -38,6 +38,30 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Long
     List<FileMetadata> findFavoritesByOwnerId(@Param("ownerId") Long ownerId);
 
     /**
+     * Finds all active file metadata records belonging to a specific owner
+     * inside the given folder.
+     *
+     * @param ownerId  the ID of the file owner
+     * @param folderId the folder UUID
+     * @return a list of active file metadata records in the folder
+     */
+    @Query("SELECT f FROM FileMetadata f WHERE f.ownerId = :ownerId " +
+           "AND f.folderId = :folderId AND f.status = 'ACTIVE'")
+    List<FileMetadata> findByOwnerIdAndFolderIdAndStatus(
+            @Param("ownerId") Long ownerId, @Param("folderId") String folderId);
+
+    /**
+     * Finds all active file metadata records belonging to a specific owner
+     * that live at the root level (no folder assigned).
+     *
+     * @param ownerId the ID of the file owner
+     * @return a list of active root-level file metadata records
+     */
+    @Query("SELECT f FROM FileMetadata f WHERE f.ownerId = :ownerId " +
+           "AND f.folderId IS NULL AND f.status = 'ACTIVE'")
+    List<FileMetadata> findRootFilesByOwnerId(@Param("ownerId") Long ownerId);
+
+    /**
      * Finds a file metadata record by its public-facing file ID (UUID).
      *
      * @param fileId the unique file identifier

@@ -37,6 +37,18 @@ public interface FileService {
     List<FileMetadataResponse> getUserFiles(Long ownerId);
 
     /**
+     * Retrieves the active file metadata records for a specific owner, scoped
+     * to one explorer location.
+     *
+     * @param ownerId  the ID of the file owner
+     * @param folderId {@code null} = every active file (dashboard / global view),
+     *                 {@code ""} / blank = root-level files only, a UUID = the
+     *                 files inside that folder
+     * @return a list of lightweight file metadata responses
+     */
+    List<FileMetadataResponse> getUserFiles(Long ownerId, String folderId);
+
+    /**
      * Retrieves detailed file metadata by its internal ID.
      * <p>
      * When an owner context is supplied, ownership is enforced; when absent

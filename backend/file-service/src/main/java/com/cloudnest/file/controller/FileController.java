@@ -131,10 +131,16 @@ public class FileController {
     }
 
     /**
-     * Lists all active file metadata records for the authenticated user.
+     * Lists active file metadata records for the authenticated user, scoped to
+     * the given explorer location.
+     * <p>
+     * The {@code folderId} query parameter matches the frontend explorer
+     * contract: absent = every active file (dashboard / global view), blank =
+     * root-level files only, a UUID = the files inside that folder.
      */
     @Operation(summary = "List user files",
-            description = "Returns all active file metadata records owned by the authenticated user.")
+            description = "Returns active file metadata records owned by the authenticated user, " +
+                    "optionally scoped to a folder (blank = root, absent = all).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Files retrieved successfully"),
             @ApiResponse(responseCode = "401", description = "Missing user identity"),
@@ -144,11 +150,14 @@ public class FileController {
     public ResponseEntity<StandardResponse<List<FileMetadataResponse>>> listUserFiles(
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader,
+            @Parameter(description = "Explorer location: omitted = all files, blank = root, " +
+                    "UUID = files inside that folder", example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
+            @RequestParam(required = false) String folderId,
             HttpServletRequest httpRequest) {
 
-        log.info("GET /api/files - userId={}", userIdHeader);
+        log.info("GET /api/files - userId={}, folderId={}", userIdHeader, folderId);
 
-        List<FileMetadataResponse> files = fileService.getUserFiles(userIdHeader);
+        List<FileMetadataResponse> files = fileService.getUserFiles(userIdHeader, folderId);
 
         return ResponseEntity.ok(
                 StandardResponse.<List<FileMetadataResponse>>builder()
@@ -304,6 +313,9 @@ public class FileController {
     public ResponseEntity<StandardResponse<FileResponse>> getFileById(
             @Parameter(description = "Internal file ID", example = "1")
             @PathVariable Long id,
+            // Internal consumers (Share Service) must send the resource owner's
+            // ID so ownership is always enforced. The API Gateway injects this
+            // header for every external call.
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
@@ -347,6 +359,9 @@ public class FileController {
     public ResponseEntity<Resource> downloadFile(
             @Parameter(description = "Internal file ID", example = "1")
             @PathVariable Long id,
+            // Internal consumers (Share Service) send the resource owner's ID so
+            // ownership checks still run; external callers carry the
+            // gateway-injected X-User-Id.
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader) {
 
@@ -388,6 +403,9 @@ public class FileController {
     public ResponseEntity<Resource> previewFile(
             @Parameter(description = "Internal file ID", example = "1")
             @PathVariable Long id,
+            // Internal consumers (Share Service) send the resource owner's ID so
+            // ownership checks still run; external callers carry the
+            // gateway-injected X-User-Id.
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader) {
 

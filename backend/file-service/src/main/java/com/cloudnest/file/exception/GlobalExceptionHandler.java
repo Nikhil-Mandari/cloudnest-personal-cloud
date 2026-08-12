@@ -6,6 +6,8 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.validation.FieldError;
 import org.springframework.web.bind.MethodArgumentNotValidException;
+import org.springframework.web.bind.MissingRequestHeaderException;
+import org.springframework.web.bind.MissingServletRequestParameterException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 import org.springframework.web.multipart.MaxUploadSizeExceededException;
@@ -208,6 +210,46 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.PAYLOAD_TOO_LARGE).body(response);
+    }
+
+    /**
+     * Handles missing required headers (e.g. the {@code X-User-Id} identity
+     * header set by the API Gateway) as a client error (400) rather than an
+     * unexpected server error.
+     */
+    @ExceptionHandler(MissingRequestHeaderException.class)
+    public ResponseEntity<ErrorResponse> handleMissingRequestHeader(
+            MissingRequestHeaderException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message("Missing required header: " + ex.getHeaderName())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
+    }
+
+    /**
+     * Handles missing required request parameters (400).
+     */
+    @ExceptionHandler(MissingServletRequestParameterException.class)
+    public ResponseEntity<ErrorResponse> handleMissingRequestParameter(
+            MissingServletRequestParameterException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message("Missing required parameter: " + ex.getParameterName())
+                .status(HttpStatus.BAD_REQUEST.value())
+                .error(HttpStatus.BAD_REQUEST.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.BAD_REQUEST).body(response);
     }
 
     /**
