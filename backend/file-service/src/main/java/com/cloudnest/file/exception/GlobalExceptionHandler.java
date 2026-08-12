@@ -172,6 +172,25 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles uploads that would exceed the user's storage quota (403).
+     */
+    @ExceptionHandler(QuotaExceededException.class)
+    public ResponseEntity<ErrorResponse> handleQuotaExceeded(
+            QuotaExceededException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.FORBIDDEN.value())
+                .error(HttpStatus.FORBIDDEN.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.FORBIDDEN).body(response);
+    }
+
+    /**
      * Handles uploads that exceed the configured file size limit (413).
      * Triggered by the explicit service-level size check.
      */

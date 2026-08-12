@@ -1,11 +1,13 @@
 package com.cloudnest.file.service.impl;
 
+import com.cloudnest.file.client.BillingServiceClient;
 import com.cloudnest.file.client.FolderServiceClient;
 import com.cloudnest.file.config.MinioProperties;
 import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
 import com.cloudnest.file.dto.FolderResponse;
+import com.cloudnest.file.dto.QuotaResponse;
 import com.cloudnest.file.dto.StorageOverviewResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
@@ -16,6 +18,7 @@ import com.cloudnest.file.exception.DuplicateResourceException;
 import com.cloudnest.file.exception.FileStorageException;
 import com.cloudnest.file.exception.FileTooLargeException;
 import com.cloudnest.file.exception.ForbiddenException;
+import com.cloudnest.file.exception.QuotaExceededException;
 import com.cloudnest.file.exception.ResourceNotFoundException;
 import com.cloudnest.file.exception.UnauthorizedException;
 import com.cloudnest.file.mapper.FileMapper;
@@ -78,29 +81,63 @@ public class FileServiceImpl implements FileService {
             "image/x-icon",
             "image/heic",
             "image/heif",
+            "video/mp4",
+            "video/webm",
+            "video/ogg",
+            "video/quicktime",
+            "video/x-msvideo",
+            "video/x-matroska",
+            "video/3gpp",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/ogg",
+            "audio/wav",
+            "audio/x-wav",
+            "audio/webm",
+            "audio/aac",
+            "audio/flac",
+            "audio/x-m4a",
             "text/plain",
             "text/markdown"
     );
 
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
 
+    /**
+     * Fallback previewability by file-name extension — used when the stored
+     * content type is missing or generic (uploads that arrived without a MIME
+     * type). Keeps extension-based preview working for those records.
+     */
+    private static final Set<String> PREVIEWABLE_EXTENSIONS = Set.of(
+            ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp",
+            ".svg", ".tiff", ".tif", ".ico",
+            ".mp4", ".webm", ".mov", ".m4v", ".ogv", ".avi", ".mkv", ".3gp",
+            ".mp3", ".wav", ".oga", ".ogg", ".aac", ".flac", ".m4a",
+            ".txt", ".md", ".json", ".xml", ".yml", ".yaml", ".csv", ".log",
+            ".js", ".ts", ".tsx", ".jsx", ".html", ".css", ".sh", ".py",
+            ".java", ".c", ".cpp", ".cs", ".go", ".rs", ".rb", ".php", ".sql"
+    );
+
     private final FileMetadataRepository fileMetadataRepository;
     private final FileMapper fileMapper;
     private final MinioService minioService;
     private final MinioProperties minioProperties;
     private final FolderServiceClient folderServiceClient;
+    private final BillingServiceClient billingServiceClient;
 
     public FileServiceImpl(
             FileMetadataRepository fileMetadataRepository,
             FileMapper fileMapper,
             MinioService minioService,
             MinioProperties minioProperties,
-            FolderServiceClient folderServiceClient) {
+            FolderServiceClient folderServiceClient,
+            BillingServiceClient billingServiceClient) {
         this.fileMetadataRepository = fileMetadataRepository;
         this.fileMapper = fileMapper;
         this.minioService = minioService;
         this.minioProperties = minioProperties;
         this.folderServiceClient = folderServiceClient;
+        this.billingServiceClient = billingServiceClient;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -123,6 +160,7 @@ public class FileServiceImpl implements FileService {
         validateOwner(request.getOwnerId());
         validateFileForUpload(file);
         validateFolder(request.getFolderId(), request.getOwnerId());
+        enforceQuota(request.getOwnerId(), file.getSize());
 
         // ── Derive storage metadata ───────────────────────────────────────────
         String originalFileName = FileNameUtil.sanitizeFileName(request.getOriginalFileName());
@@ -468,7 +506,7 @@ public class FileServiceImpl implements FileService {
 
         FileMetadata fileMetadata = findActiveOwnedFile(id, ownerId);
 
-        if (!isPreviewable(fileMetadata.getContentType())) {
+        if (!isPreviewable(fileMetadata.getContentType(), fileMetadata.getOriginalFileName())) {
             log.warn("Preview not supported for content type '{}' on file id={}",
                     fileMetadata.getContentType(), id);
             throw new BadRequestException(
@@ -746,6 +784,46 @@ public class FileServiceImpl implements FileService {
     }
 
     /**
+     * Enforces the user's storage quota before the binary is uploaded.
+     * <p>
+     * The quota comes from the Billing Service (the user's subscription).
+     * If the Billing Service is unreachable the check fails open so existing
+     * upload behaviour is never broken by billing being temporarily down.
+     *
+     * @param ownerId  the authenticated user's ID
+     * @param newBytes the size of the incoming upload in bytes
+     */
+    private void enforceQuota(Long ownerId, long newBytes) {
+        try {
+            StandardResponse<QuotaResponse> response = billingServiceClient.getQuota(ownerId);
+            if (response == null || response.getData() == null
+                    || response.getData().getQuotaBytes() == null) {
+                log.debug("Quota unavailable for ownerId={} — skipping enforcement", ownerId);
+                return;
+            }
+
+            long quotaBytes = response.getData().getQuotaBytes();
+            long used = fileMetadataRepository.findByOwnerId(ownerId).stream()
+                    .filter(f -> f.getStatus() == FileStatus.ACTIVE)
+                    .mapToLong(FileMetadata::getFileSize)
+                    .sum();
+
+            if (used + newBytes > quotaBytes) {
+                log.warn("Quota exceeded: ownerId={}, used={}, incoming={}, quota={}",
+                        ownerId, used, newBytes, quotaBytes);
+                throw new QuotaExceededException(
+                        "Storage limit reached. Upgrade your plan to continue.");
+            }
+        } catch (QuotaExceededException e) {
+            throw e;
+        } catch (Exception e) {
+            // Fail open: billing unavailability must never block uploads.
+            log.debug("Quota check skipped for ownerId={} (billing unavailable): {}",
+                    ownerId, e.getMessage());
+        }
+    }
+
+    /**
      * Validates that the referenced folder exists and belongs to the owner.
      * <p>
      * The Folder Service enforces ownership itself (returns 404 when the folder
@@ -796,11 +874,19 @@ public class FileServiceImpl implements FileService {
     /**
      * Returns whether the given MIME type supports in-browser preview.
      */
-    private boolean isPreviewable(String contentType) {
-        if (contentType == null) {
-            return false;
+    private boolean isPreviewable(String contentType, String originalFileName) {
+        String type = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        if (PREVIEWABLE_CONTENT_TYPES.contains(type)) {
+            return true;
         }
-        return PREVIEWABLE_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT));
+        // Generic uploads (absent or octet-stream MIME) fall back to the file
+        // name extension so images/PDFs/media without a stored content type
+        // still preview.
+        if (type.isBlank() || DEFAULT_CONTENT_TYPE.equals(type)) {
+            String name = originalFileName == null ? "" : originalFileName.toLowerCase(Locale.ROOT);
+            return PREVIEWABLE_EXTENSIONS.stream().anyMatch(name::endsWith);
+        }
+        return false;
     }
 
     /**
