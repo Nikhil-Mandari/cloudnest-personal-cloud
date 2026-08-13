@@ -4,17 +4,14 @@ import {
   Bell,
   CreditCard,
   FileUp,
-  Fingerprint,
   FolderUp,
   Inbox,
   KeyRound,
   Lock,
-  RefreshCcw,
   RefreshCw,
   RotateCcw,
   ShieldAlert,
   ShieldCheck,
-  ShieldOff,
   type LucideIcon,
 } from 'lucide-react';
 
@@ -65,27 +62,6 @@ const TYPE_STYLES: Record<NotificationType, { icon: LucideIcon; className: strin
   },
   ACCOUNT_LOCKED: {
     icon: Lock,
-    className: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
-  },
-  // ── Phase 6: 2FA & passkeys ──────────────────────────────────────────────
-  TWO_FACTOR_ENABLED: {
-    icon: ShieldCheck,
-    className: 'bg-emerald-500/10 text-emerald-600 dark:text-emerald-400',
-  },
-  TWO_FACTOR_DISABLED: {
-    icon: ShieldOff,
-    className: 'bg-gray-500/10 text-gray-600 dark:text-gray-400',
-  },
-  BACKUP_CODES_REGENERATED: {
-    icon: RefreshCcw,
-    className: 'bg-amber-500/10 text-amber-600 dark:text-amber-400',
-  },
-  PASSKEY_REGISTERED: {
-    icon: Fingerprint,
-    className: 'bg-indigo-500/10 text-indigo-600 dark:text-indigo-400',
-  },
-  PASSKEY_REMOVED: {
-    icon: Fingerprint,
     className: 'bg-rose-500/10 text-rose-600 dark:text-rose-400',
   },
   // ── Phase 7: billing & payments ─────────────────────────────────────────

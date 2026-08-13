@@ -365,11 +365,6 @@ function SessionsTab({
                     This device
                   </span>
                 )}
-                {session.trusted && (
-                  <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[11px] font-semibold text-emerald-700 dark:bg-emerald-500/15 dark:text-emerald-300">
-                    Trusted
-                  </span>
-                )}
               </div>
               <p className="mt-0.5 truncate text-xs text-gray-500 dark:text-gray-400">
                 {[session.ipAddress, session.location].filter(Boolean).join(' · ')}

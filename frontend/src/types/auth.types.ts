@@ -149,17 +149,6 @@ export interface SessionInfo {
   lastActive: string;
 }
 
-export interface TrustedDeviceInfo {
-  id: number;
-  deviceId: string;
-  deviceName: string;
-  browser: string;
-  os: string;
-  ipAddress: string | null;
-  lastUsedAt: string;
-  createdAt: string;
-}
-
 export interface LoginHistoryEntry {
   id: number;
   /** Owner of the attempt (present on admin views). */
@@ -229,77 +218,8 @@ export interface VerifyOtpState {
   otpExpiryMinutes?: number;
 }
 
-// ── Phase 6: two-factor authentication (TOTP) ──────────────────────────────
-
-/** Current 2FA state shown on the Security page. */
-export interface TwoFactorStatus {
-  enabled: boolean;
-  backupCodesRemaining: number;
-}
-
-/** Secret + otpauth URI returned by the setup step (QR payload). */
-export interface TwoFactorSetup {
-  secret: string;
-  otpauthUri: string;
-  accountName: string;
-  issuer: string;
-  digits: number;
-  periodSeconds: number;
-}
-
-export interface EnableTwoFactorRequest {
-  code: string;
-}
-
-/** Enabling 2FA returns the backup codes exactly once. */
-export interface EnableTwoFactorResponse {
-  enabled: boolean;
-  backupCodes: string[];
-}
-
-export interface DisableTwoFactorRequest {
-  /** TOTP code, unused backup code or account password. */
-  verification: string;
-}
-
-export interface RegenerateBackupCodesResponse {
-  backupCodes: string[];
-}
-
+/** Completes a sign-in blocked on the backend 2FA step (TOTP / backup code). */
 export interface TwoFactorLoginRequest {
   challengeToken: string;
   code: string;
-}
-
-// ── Phase 6: passkeys (WebAuthn) ───────────────────────────────────────────
-
-/** A registered passkey shown on the Security page. */
-export interface PasskeyCredentialInfo {
-  id: string;
-  nickname: string | null;
-  transports: string[];
-  createdAt: string;
-  lastUsedAt: string | null;
-}
-
-/** Start of a registration ceremony: creation options for the browser. */
-export interface PasskeyRegistrationStart {
-  optionsJson: string;
-}
-
-export interface PasskeyRegistrationFinishRequest {
-  optionsJson: string;
-  responseJson: string;
-  nickname?: string;
-}
-
-/** Start of a passkey sign-in: assertion request echoed back on finish. */
-export interface PasskeyAuthenticationStart {
-  requestJson: string;
-  credentialsGetJson: string;
-}
-
-export interface PasskeyAuthenticationFinishRequest {
-  requestJson: string;
-  responseJson: string;
 }

@@ -25,10 +25,6 @@ export interface VerifyOtpMutationVariables {
   otpExpiryMinutes?: number;
 }
 
-import { isPasskeySupported } from '@/utils/passkeys';
-
-export { isPasskeySupported };
-
 /**
  * Auth mutations for the login / register / OTP-verify pages.
  *
@@ -143,43 +139,6 @@ export function useAuthMutations() {
       authService.resendOtp({ email, challengeToken }),
   });
 
-  const passkeyLogin = useMutation({
-    mutationFn: async ({ from }: { from?: string } = {}) => {
-      void from; // redirect target is applied on success
-      const { data: startData } = await authService.passkeyAuthenticateStart();
-      const started = startData.data;
-
-      if (!isPasskeySupported()) {
-        throw new Error('Passkeys are not supported by this browser.');
-      }
-
-      const assertion = await navigator.credentials.get({
-        publicKey: JSON.parse(started.credentialsGetJson) as PublicKeyCredentialRequestOptions,
-      });
-      if (!assertion) {
-        throw new Error('Passkey sign-in was cancelled.');
-      }
-
-      const responseJson =
-        'toJSON' in assertion
-          ? JSON.stringify((assertion as { toJSON: () => unknown }).toJSON())
-          : JSON.stringify(assertion);
-
-      const { data } = await authService.passkeyAuthenticateFinish({
-        requestJson: started.requestJson,
-        responseJson,
-      });
-      return data.data;
-    },
-    onSuccess: (auth, variables) => {
-      toast.success('Passkey sign-in successful!');
-      applySession(auth.token, auth.refreshToken, variables.from);
-    },
-    onError: (error) => {
-      toast.error(getErrorMessage(error, 'Passkey sign-in failed. Please try again.'));
-    },
-  });
-
   function applySession(token: string, refreshToken: string | undefined, from?: string) {
     setAuthSession(token, refreshToken ?? null, null);
     setStatus('authenticated');
@@ -206,6 +165,5 @@ export function useAuthMutations() {
     registerMutation: register,
     verifyOtpMutation: verifyOtp,
     resendOtpMutation: resendOtp,
-    passkeyLoginMutation: passkeyLogin,
   };
 }

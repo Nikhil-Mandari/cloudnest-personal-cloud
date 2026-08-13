@@ -23,29 +23,11 @@ export const API_ENDPOINTS = {
     changePassword: '/auth/change-password',
     sessions: '/auth/sessions',
     session: (sessionId: string) => `/auth/sessions/${sessionId}`,
-    trustedDevices: '/auth/trusted-devices',
-    trustedDevice: (id: number) => `/auth/trusted-devices/${id}`,
     loginHistory: '/auth/login-history',
     securityLogs: '/auth/security-logs',
     securityOverview: '/auth/security-overview',
-    // ── Phase 6: 2FA (TOTP) ───────────────────────────────────────────────
+    /** Completes a sign-in blocked on the backend 2FA step (TOTP / backup code). */
     verifyTwoFactorLogin: '/auth/login/2fa',
-    twoFactor: {
-      status: '/auth/2fa/status',
-      setup: '/auth/2fa/setup',
-      enable: '/auth/2fa/enable',
-      disable: '/auth/2fa/disable',
-      regenerateBackupCodes: '/auth/2fa/backup-codes/regenerate',
-    },
-    // ── Phase 6: passkeys (WebAuthn) ──────────────────────────────────────
-    passkeys: {
-      list: '/auth/passkeys',
-      registerStart: '/auth/passkeys/register/start',
-      registerFinish: '/auth/passkeys/register/finish',
-      remove: (id: string) => `/auth/passkeys/${id}`,
-      authenticateStart: '/auth/passkeys/authenticate/start',
-      authenticateFinish: '/auth/passkeys/authenticate/finish',
-    },
   },
   users: {
     profile: '/users/me',
