@@ -514,13 +514,29 @@ public class ShareServiceImpl implements ShareService {
         // ── Apply updates ───────────────────────────────────────────────────────
         share.setPermission(request.getPermission());
 
-        if (request.getExpiryDate() != null) {
+        // Expiry: a new date replaces the old one; clearExpiry removes it so the
+        // link never expires (an explicit null expiryDate means "no change").
+        if (Boolean.TRUE.equals(request.getClearExpiry())) {
+            share.setExpiryDate(null);
+        } else if (request.getExpiryDate() != null) {
             share.setExpiryDate(request.getExpiryDate());
         }
 
+        // Link password: only the owner may set / change / remove it. The
+        // plain-text value is hashed before storage and never returned.
+        if (Boolean.TRUE.equals(request.getClearPassword())) {
+            if (share.getPasswordHash() != null) {
+                log.info("Share password removed by owner: shareId={}", shareId);
+            }
+            share.setPasswordHash(null);
+        } else if (request.getPassword() != null && !request.getPassword().isBlank()) {
+            share.setPasswordHash(hashPassword(request.getPassword()));
+            log.info("Share password updated by owner: shareId={}", shareId);
+        }
+
         Share saved = shareRepository.save(share);
-        log.info("Share updated successfully: shareId={}, newPermission={}",
-                shareId, request.getPermission());
+        log.info("Share updated successfully: shareId={}, newPermission={}, hasPassword={}",
+                shareId, request.getPermission(), saved.getPasswordHash() != null);
 
         return shareMapper.toShareResponse(saved);
     }

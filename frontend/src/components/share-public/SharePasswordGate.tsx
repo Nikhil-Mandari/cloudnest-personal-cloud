@@ -85,6 +85,11 @@ export function SharePasswordGate({
           Unlock
         </Button>
       </form>
+
+      <p className="text-center text-xs text-gray-400 dark:text-gray-500">
+        Share passwords can't be recovered — ask the owner to share the password or update the
+        link in their share settings.
+      </p>
     </div>
   );
 }
