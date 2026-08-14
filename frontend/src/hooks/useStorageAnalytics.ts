@@ -26,7 +26,7 @@ export function useStorageOverviewQuery() {
   });
 }
 
-/** Derives a quota summary from the overview (free tier = 5 GB). */
+/** Derives a quota summary from the overview (free tier = 30 GB). */
 export function deriveStorageSummary(used: number): StorageSummary {
   const quota = STORAGE_QUOTA_BYTES;
   const clamped = Math.max(0, used);

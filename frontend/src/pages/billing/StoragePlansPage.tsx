@@ -181,7 +181,7 @@ export function StoragePlansPage() {
   checkoutRef.current = checkout;
 
   const used = overview?.storageUsed ?? 0;
-  const quota = subscription?.quotaBytes ?? 5 * 1024 ** 3;
+  const quota = subscription?.quotaBytes ?? 30 * 1024 ** 3;
   const remaining = Math.max(0, quota - used);
   const percent = quota > 0 ? Math.min(100, (used / quota) * 100) : 0;
 

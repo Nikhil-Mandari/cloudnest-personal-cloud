@@ -382,7 +382,7 @@ public class BillingServiceImpl implements BillingService {
     private long quotaFor(PlanType planType) {
         return planRepository.findByPlanType(planType)
                 .map(Plan::getStorageBytes)
-                .orElse(5L * 1024 * 1024 * 1024); // fallback: 5 GB
+                .orElse(30L * 1024 * 1024 * 1024); // fallback: 30 GB (matches the FREE plan)
     }
 
     private void sendNotification(Long userId, String type, String title, String message) {
