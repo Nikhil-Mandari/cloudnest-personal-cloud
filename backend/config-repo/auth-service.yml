@@ -24,6 +24,12 @@ spring:
           auth: ${MAIL_SMTP_AUTH:true}
           starttls:
             enable: ${MAIL_SMTP_STARTTLS:true}
+          # Bound SMTP operations (ms) so a stalled/unreachable SMTP server
+          # fails fast instead of hanging request threads and the mail health
+          # probe indefinitely. Also keeps the aggregate health bounded.
+          connectiontimeout: ${MAIL_SMTP_CONNECT_TIMEOUT:5000}
+          timeout: ${MAIL_SMTP_TIMEOUT:5000}
+          writetimeout: ${MAIL_SMTP_WRITE_TIMEOUT:5000}
 
 # ── Transactional email (OTP delivery) ─────────────────────────
 app:
