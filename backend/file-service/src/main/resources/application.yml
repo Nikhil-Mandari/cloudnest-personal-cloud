@@ -1,0 +1,75 @@
+# ═══════════════════════════════════════════════════════════════
+# CloudNest File Service — Local Configuration
+# ═══════════════════════════════════════════════════════════════
+# Minimal configuration to connect to Config Server.
+# All other properties are managed centrally via config-repo/file-service.yml
+# and config-repo/application.yml.
+# ═══════════════════════════════════════════════════════════════
+
+server:
+  port: 8083
+
+spring:
+  application:
+    name: file-service
+
+  # Defaults to localhost for local development; override CONFIG_SERVER_URL in Docker.
+  config:
+    import: optional:configserver:${CONFIG_SERVER_URL:http://localhost:8888}
+
+  # ── Multipart upload limits (must be >= minio.max-file-size) ─────
+  servlet:
+    multipart:
+      max-file-size: 100MB
+      max-request-size: 100MB
+
+# ── Eureka Service Discovery ──────────────────────────────
+eureka:
+  client:
+    service-url:
+      defaultZone: ${EUREKA_SERVER_URL:http://localhost:8761/eureka/}
+    register-with-eureka: true
+    fetch-registry: true
+
+# ── Management / Actuator ─────────────────────────────────
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      show-details: when-authorized
+  info:
+    env:
+      enabled: true
+
+info:
+  app:
+    name: CloudNest File Service
+    version: 1.0.0
+    environment: development
+
+# ── MinIO Object Storage ───────────────────────────────────
+# Credentials are never hardcoded — supply via environment variables or Config Server.
+minio:
+  endpoint: ${MINIO_ENDPOINT:http://localhost:9000}
+  access-key: ${MINIO_ACCESS_KEY:minioadmin}
+  secret-key: ${MINIO_SECRET_KEY:minioadmin}
+  bucket-name: ${MINIO_BUCKET_NAME:cloudnest-files}
+  secure: ${MINIO_SECURE:false}
+  max-file-size: ${MINIO_MAX_FILE_SIZE:104857600}  # 100 MB
+
+# ── SpringDoc OpenAPI / Swagger UI ────────────────────────
+springdoc:
+  api-docs:
+    path: /v3/api-docs
+  swagger-ui:
+    path: /swagger-ui.html
+    operations-sorter: method
+    tags-sorter: alpha
+
+logging:
+  level:
+    root: INFO
+    com.cloudnest.file: DEBUG

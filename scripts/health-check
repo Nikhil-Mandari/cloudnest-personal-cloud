@@ -1,0 +1,161 @@
+#!/usr/bin/env bash
+# ---------------------------------------------------------------------------
+# CloudNest — Backend Health Check
+# ---------------------------------------------------------------------------
+# Verifies real TCP connectivity and Spring Boot /actuator/health endpoints
+# for the CloudNest microservices stack (Docker Compose or locally run).
+#
+# Usage:
+#   scripts/health-check                 # require the FULL stack (all services)
+#   scripts/health-check --infra-only    # require infra only (mysql, minio,
+#                                        #   eureka-server, config-server)
+#   scripts/health-check auth file       # require only the named services
+#   scripts/health-check --help          # show this help
+#
+# Examples:
+#   bash scripts/health-check --infra-only
+#   bash scripts/health-check auth-service file-service
+#
+# Exit codes:
+#   0  every required service is healthy
+#   1  one or more required services failed
+#   2  usage error (unknown service name)
+# ---------------------------------------------------------------------------
+set -u
+
+HOST=127.0.0.1
+HTTP_TIMEOUT=3
+
+# Format: name|host-port|health-path|kind
+#   kind "tcp"     -> TCP connectivity only (no HTTP endpoint)
+#   kind "http-up" -> HTTP 200 AND body contains "UP" (Spring actuator)
+#   kind "http-ok" -> HTTP 200 (e.g. MinIO live endpoint)
+SERVICES=(
+  "mysql|3307|-|tcp"
+  "minio|9000|/minio/health/live|http-ok"
+  "eureka-server|8761|/actuator/health|http-up"
+  "config-server|8888|/actuator/health|http-up"
+  "auth-service|8081|/actuator/health|http-up"
+  "user-service|8082|/actuator/health|http-up"
+  "file-service|8083|/actuator/health|http-up"
+  "folder-service|8084|/actuator/health|http-up"
+  "notification-service|8085|/actuator/health|http-up"
+  "share-service|8086|/actuator/health|http-up"
+  "api-gateway|8080|/actuator/health|http-up"
+)
+
+# Infrastructure-only subset used by --infra-only
+INFRA=(mysql minio eureka-server config-server)
+
+usage() {
+  sed -n '2,26p' "$0" | sed 's/^# \{0,1\}//'
+  exit 0
+}
+
+is_in() {
+  local needle=$1
+  shift
+  local x
+  for x in "$@"; do
+    [ "$x" = "$needle" ] && return 0
+  done
+  return 1
+}
+
+required_for() {
+  local name=$1
+  case "$MODE" in
+    all)   return 0 ;;
+    infra) is_in "$name" "${INFRA[@]}" ;;
+    named) is_in "$name" "${REQUIRED[@]}" ;;
+  esac
+}
+
+check_tcp() {
+  local name=$1 port=$2
+  if timeout 3 bash -c "exec 3<>/dev/tcp/$HOST/$port" 2>/dev/null; then
+    echo "[PASS] $name — TCP port $port reachable"
+    return 0
+  fi
+  echo "[FAIL] $name — TCP port $port NOT reachable"
+  return 1
+}
+
+check_http() {
+  local name=$1 port=$2 path=$3 kind=$4
+  local url="http://$HOST:$port$path"
+  case "$kind" in
+    http-ok)
+      if curl -sf --connect-timeout 2 --max-time "$HTTP_TIMEOUT" "$url" >/dev/null 2>&1; then
+        echo "[PASS] $name — $url -> HTTP OK"
+        return 0
+      fi
+      echo "[FAIL] $name — $url -> not reachable"
+      return 1
+      ;;
+    http-up)
+      local body
+      if body=$(curl -s --connect-timeout 2 --max-time "$HTTP_TIMEOUT" "$url" 2>/dev/null) \
+        && printf '%s' "$body" | grep -q '"UP"'; then
+        echo "[PASS] $name — $url -> UP"
+        return 0
+      fi
+      echo "[FAIL] $name — $url -> not healthy (${body:-no response})"
+      return 1
+      ;;
+  esac
+  return 1
+}
+
+# --- argument parsing -------------------------------------------------------
+MODE="all"
+REQUIRED=()
+
+if [ $# -gt 0 ]; then
+  case "$1" in
+    --help|-h) usage ;;
+    --all)      MODE="all" ;;
+    --infra-only) MODE="infra" ;;
+    *)
+      MODE="named"
+      REQUIRED=("$@")
+      # Validate names against the known services
+      local_names=()
+      for s in "${SERVICES[@]}"; do
+        local_names+=("${s%%|*}")
+      done
+      for name in "${REQUIRED[@]}"; do
+        if ! is_in "$name" "${local_names[@]}"; then
+          echo "error: unknown service '$name'" >&2
+          printf 'known services: %s\n' "${local_names[*]}" >&2
+          exit 2
+        fi
+      done
+      ;;
+  esac
+fi
+
+# --- run checks -------------------------------------------------------------
+failures=0
+echo "== CloudNest backend health check (mode: $MODE) =="
+
+for s in "${SERVICES[@]}"; do
+  IFS='|' read -r name port path kind <<< "$s"
+  if required_for "$name"; then
+    if [ "$kind" = "tcp" ]; then
+      check_tcp "$name" "$port" || failures=$((failures + 1))
+    else
+      check_http "$name" "$port" "$path" "$kind" || failures=$((failures + 1))
+    fi
+  else
+    echo "[SKIP] $name — not in scope (host port $port)"
+  fi
+done
+
+echo "---"
+if [ "$failures" -eq 0 ]; then
+  echo "RESULT: all required services healthy"
+  exit 0
+fi
+echo "RESULT: $failures required service(s) failed"
+exit 1

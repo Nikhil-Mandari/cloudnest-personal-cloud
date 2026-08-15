@@ -1,0 +1,75 @@
+@import 'tailwindcss';
+@config '../../tailwind.config.js';
+
+/* Class-based dark mode (see index.html pre-hydration script) */
+@custom-variant dark (&:where(.dark, .dark *));
+
+@theme {
+  --animate-float: float 10s ease-in-out infinite;
+  --animate-float-slow: float 16s ease-in-out infinite;
+}
+
+@keyframes float {
+  0%,
+  100% {
+    transform: translateY(0) translateX(0);
+  }
+  50% {
+    transform: translateY(-18px) translateX(10px);
+  }
+}
+
+@layer base {
+  /* Restore the Tailwind v3-style default border color */
+  * {
+    @apply border-gray-200 dark:border-gray-800;
+  }
+
+  html {
+    @apply scroll-smooth;
+  }
+
+  body {
+    @apply bg-gray-50 font-sans text-gray-900 antialiased dark:bg-gray-950 dark:text-gray-100;
+  }
+
+  ::selection {
+    @apply bg-brand-500/20 text-brand-800 dark:bg-brand-400/30 dark:text-brand-100;
+  }
+}
+
+/* Thin, theme-aware scrollbars */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  border-radius: 9999px;
+  background-color: rgb(209 213 219);
+}
+.dark ::-webkit-scrollbar-thumb {
+  background-color: rgb(55 65 81);
+}
+::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(156 163 175);
+}
+.dark ::-webkit-scrollbar-thumb:hover {
+  background-color: rgb(75 85 99);
+}
+
+/* Brand pulse for freshly uploaded files (tile / row highlight) */
+@keyframes file-highlight-pulse {
+  0%,
+  100% {
+    box-shadow: 0 0 0 0 rgb(99 102 241 / 0);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgb(99 102 241 / 0.5);
+  }
+}
+.file-highlight {
+  animation: file-highlight-pulse 0.85s ease-in-out 3;
+}

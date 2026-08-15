@@ -90,10 +90,14 @@ cloudnest/
 ## 📖 Documentation
 
 - ✅ `docs/01_PROJECT_CONTEXT.md` — Project context and vision
-- ⏳ `docs/02_REQUIREMENTS.md` — Functional and non-functional requirements
-- ⏳ `docs/03_ARCHITECTURE.md` — System architecture
-- ⏳ `docs/04_DATABASE_DESIGN.md` — Database schema
-- ⏳ `docs/05_API_CONTRACT.md` — API design and endpoints
+- ✅ `docs/02_REQUIREMENTS.md` — Functional and non-functional requirements
+- ✅ `docs/03_ARCHITECTURE.md` — System architecture
+- ✅ `docs/04_DATABASE.md` — Database schema
+- ✅ `docs/05_API_CONTRACT.md` — API design and endpoints
+- ✅ `docs/06_UI_FLOW.md` — UI flows
+- ✅ `docs/07_TASKS.md` — Task tracking
+- ✅ `docs/08_AZURE_DEPLOYMENT.md` — Azure deployment model and operations
+- ✅ `docs/decisions/` — Architecture decision records (ADR)
 
 ---
 
@@ -134,6 +138,10 @@ HEALTHCHECK, `curl` for health probes) and a single `docker-compose.yml` at the
 project root.
 
 **Prerequisites:** Docker Engine + Docker Compose v2 (BuildKit is the default).
+
+> ⚠️ **Memory:** the full stack runs ~9 Spring Boot JVMs inside the Docker VM —
+> **16 GB RAM recommended**. On an ~8 GB machine, run infrastructure + selected
+> services only (see [`docker/README.md`](docker/README.md) → System Requirements).
 
 ### Quick start
 
