@@ -119,3 +119,7 @@ echo "   Eureka: ssh -L 8761:localhost:8761 $USER@<vm-ip> then http://localhost:
 echo
 echo "==> Remember: fill $APP_DIR/.env secrets BEFORE first real OTP/payment test, then:"
 echo "   docker compose up -d && docker compose restart auth-service billing-service"
+echo
+echo "==> CORS note: staging serves frontend + API on the SAME origin ($DOMAIN),"
+echo "   so the gateway's localhost-only CORS allowlist is never triggered."
+echo "   If you later split origins, add the staging origin to CorsConfig.java."
