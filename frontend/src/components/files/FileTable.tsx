@@ -1,3 +1,4 @@
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { ArrowDown, ArrowUp, ArrowUpDown } from 'lucide-react';
 
 import type { FileItem, SortDirection, SortKey } from '@/types';
@@ -11,9 +12,16 @@ export interface FileTableProps {
   sortDirection: SortDirection;
   onSortChange: (key: SortKey) => void;
   ownerName: string;
-  onSelect: (id: number) => void;
+  /** Active search term — matched text is highlighted in file names. */
+  searchQuery?: string;
+  /** Ids of freshly uploaded files — their rows pulse. */
+  highlightedIds?: number[];
+  /** Dense rows used by compact view. */
+  compact?: boolean;
+  onSelect: (file: FileItem, event?: ReactMouseEvent) => void;
   onToggleFavorite: (file: FileItem) => void;
   onOpenMenu: (file: FileItem, x: number, y: number) => void;
+  onPreview: (file: FileItem) => void;
 }
 
 interface SortableHeaderProps {
@@ -72,7 +80,7 @@ function SortableHeader({
   );
 }
 
-/** Sortable, responsive table used by list view. */
+/** Sortable, responsive table used by list and compact views. */
 export function FileTable({
   files,
   selectedIds,
@@ -80,9 +88,13 @@ export function FileTable({
   sortDirection,
   onSortChange,
   ownerName,
+  searchQuery,
+  highlightedIds = [],
+  compact = false,
   onSelect,
   onToggleFavorite,
   onOpenMenu,
+  onPreview,
 }: FileTableProps) {
   return (
     <div className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white shadow-sm shadow-gray-900/[0.03] dark:border-gray-800 dark:bg-gray-900">
@@ -90,7 +102,11 @@ export function FileTable({
         <table className="w-full border-collapse">
           <thead>
             <tr className="border-b border-gray-100 dark:border-gray-800">
-              <th scope="col" className="w-12 py-3 pr-0 pl-4" aria-label="Select" />
+              <th
+                scope="col"
+                className={cn('w-12 py-3 pr-0 pl-4', compact && 'hidden')}
+                aria-label="Select"
+              />
               <SortableHeader
                 label="Name"
                 column="name"
@@ -138,9 +154,13 @@ export function FileTable({
                 file={file}
                 selected={selectedIds.includes(file.id)}
                 ownerName={ownerName}
+                searchQuery={searchQuery}
+                highlighted={highlightedIds.includes(file.id)}
+                compact={compact}
                 onSelect={onSelect}
                 onToggleFavorite={onToggleFavorite}
                 onOpenMenu={onOpenMenu}
+                onPreview={onPreview}
               />
             ))}
           </tbody>

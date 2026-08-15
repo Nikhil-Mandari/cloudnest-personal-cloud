@@ -1,18 +1,35 @@
+import type { MouseEvent as ReactMouseEvent } from 'react';
 import { Check, EllipsisVertical, Star } from 'lucide-react';
 
+import { Highlight } from '@/components/common/Highlight';
 import type { FileItem } from '@/types';
 import { cn } from '@/utils/cn';
-import { formatFileDate, getFileExtension, getFileTypeCategory } from '@/utils/file';
+import {
+  formatFileDate,
+  getFileExtension,
+  getFileTypeCategory,
+  isRecentlyUploaded,
+} from '@/utils/file';
 import { formatBytes } from '@/utils/format';
-import { FileIcon } from './FileIcon';
+import { ScanStatusBadge } from './ScanStatusBadge';
+import { FileThumbnail } from './FileThumbnail';
 
 export interface FileRowProps {
   file: FileItem;
   selected: boolean;
   ownerName: string;
-  onSelect: (id: number) => void;
+  /** Active search term — matched text is highlighted in the name. */
+  searchQuery?: string;
+  /** Freshly uploaded — the row pulses so the user spots it. */
+  highlighted?: boolean;
+  /** Dense row used by compact view. */
+  compact?: boolean;
+  /** Selection callback — the event carries Shift/Ctrl/Cmd modifiers. */
+  onSelect: (file: FileItem, event?: ReactMouseEvent) => void;
   onToggleFavorite: (file: FileItem) => void;
   onOpenMenu: (file: FileItem, x: number, y: number) => void;
+  /** Opens the inline preview (double-click). */
+  onPreview: (file: FileItem) => void;
 }
 
 function formatFileType(file: FileItem): string {
@@ -28,13 +45,23 @@ export function FileRow({
   file,
   selected,
   ownerName,
+  searchQuery,
+  highlighted = false,
+  compact = false,
   onSelect,
   onToggleFavorite,
   onOpenMenu,
+  onPreview,
 }: FileRowProps) {
+  const isNew = isRecentlyUploaded(file.createdAt);
+
+  const cellPadding = compact ? 'py-1.5' : 'py-2.5';
+
   return (
     <tr
-      onClick={() => onSelect(file.id)}
+      data-file-id={file.id}
+      onClick={(event) => onSelect(file, event)}
+      onDoubleClick={() => onPreview(file)}
       onContextMenu={(event) => {
         event.preventDefault();
         onOpenMenu(file, event.clientX, event.clientY);
@@ -44,10 +71,11 @@ export function FileRow({
         selected
           ? 'bg-brand-500/[0.07] dark:bg-brand-500/[0.09]'
           : 'hover:bg-gray-50 dark:hover:bg-gray-800/40',
+        highlighted && 'file-highlight',
       )}
     >
       {/* Selection checkbox */}
-      <td className="w-12 py-2.5 pr-0 pl-4">
+      <td className={cn('w-12 pr-0 pl-4', cellPadding, compact && 'hidden')}>
         <span
           aria-hidden="true"
           className={cn(
@@ -62,15 +90,23 @@ export function FileRow({
       </td>
 
       {/* Name */}
-      <td className="py-2.5 pr-3">
+      <td className={cn('pr-3', cellPadding)}>
         <div className="flex min-w-0 items-center gap-3">
-          <FileIcon file={file} size="sm" />
+          <FileThumbnail file={file} size="sm" />
           <span
             title={file.originalFileName}
             className="min-w-0 truncate text-sm font-medium text-gray-900 dark:text-white"
           >
-            {file.originalFileName}
+            <Highlight text={file.originalFileName} query={searchQuery} />
           </span>
+          {isNew && !compact && (
+            <span className="bg-emerald-500/10 text-emerald-600 dark:text-emerald-400 shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-bold tracking-wide uppercase">
+              New
+            </span>
+          )}
+          {file.scanStatus && file.scanStatus !== 'CLEAN' && (
+            <ScanStatusBadge status={file.scanStatus} compact />
+          )}
           {file.isFavorite && (
             <Star className="h-3.5 w-3.5 shrink-0 fill-amber-400 text-amber-400" />
           )}
@@ -78,27 +114,47 @@ export function FileRow({
       </td>
 
       {/* Type */}
-      <td className="hidden py-2.5 pr-3 text-sm text-gray-500 md:table-cell dark:text-gray-400">
+      <td
+        className={cn(
+          'hidden pr-3 text-sm text-gray-500 md:table-cell dark:text-gray-400',
+          cellPadding,
+        )}
+      >
         {formatFileType(file)}
       </td>
 
       {/* Size */}
-      <td className="py-2.5 pr-3 text-right text-sm text-gray-500 tabular-nums sm:text-left dark:text-gray-400">
+      <td
+        className={cn(
+          'pr-3 text-right text-sm text-gray-500 tabular-nums sm:text-left dark:text-gray-400',
+          cellPadding,
+        )}
+      >
         {formatBytes(file.fileSize)}
       </td>
 
       {/* Modified */}
-      <td className="hidden py-2.5 pr-3 text-sm text-gray-500 lg:table-cell dark:text-gray-400">
+      <td
+        className={cn(
+          'hidden pr-3 text-sm text-gray-500 lg:table-cell dark:text-gray-400',
+          cellPadding,
+        )}
+      >
         {formatFileDate(file.createdAt)}
       </td>
 
       {/* Owner */}
-      <td className="hidden py-2.5 pr-3 text-sm text-gray-500 xl:table-cell dark:text-gray-400">
+      <td
+        className={cn(
+          'hidden pr-3 text-sm text-gray-500 xl:table-cell dark:text-gray-400',
+          cellPadding,
+        )}
+      >
         {ownerName}
       </td>
 
       {/* Actions */}
-      <td className="w-20 py-2.5 pr-4">
+      <td className={cn('w-20 pr-4', cellPadding)}>
         <div className="flex items-center justify-end gap-0.5">
           <button
             type="button"

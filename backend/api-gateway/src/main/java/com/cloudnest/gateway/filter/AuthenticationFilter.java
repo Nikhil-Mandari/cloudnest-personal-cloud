@@ -26,7 +26,8 @@ import java.util.Optional;
  *   <li>Public endpoints (auth routes) are allowed through without a token.</li>
  *   <li>All other routes require a valid {@code Authorization: Bearer <token>} header.</li>
  *   <li>When a valid token is present, user identity ({@code X-User-Id},
- *       {@code X-User-Email}) is forwarded as headers to the downstream service.</li>
+ *       {@code X-User-Username}, {@code X-User-Email}, {@code X-User-Role})
+ *       is forwarded as headers to the downstream service.</li>
  *   <li>Invalid / missing tokens on protected routes return {@code 401 Unauthorized}.</li>
  * </ol>
  */
@@ -38,11 +39,23 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
     /** Paths that do NOT require authentication. */
     private static final List<String> PUBLIC_PATHS = List.of(
             "/api/auth/register",
+            "/api/auth/register/verify",
             "/api/auth/login",
+            "/api/auth/login/verify",
+            "/api/auth/login/2fa",
+            "/api/auth/passkeys/authenticate/start",
+            "/api/auth/passkeys/authenticate/finish",
             "/api/auth/refresh",
             "/api/auth/forgot-password",
+            "/api/auth/forgot-password/verify",
+            "/api/auth/forgot-password/reset",
             "/api/auth/reset-password",
+            "/api/auth/otp/resend",
+            "/api/auth/oauth/",
             "/api/shares/public/",
+            // Payment-provider webhooks arrive without a JWT — the billing
+            // service verifies them by signature server-side.
+            "/api/billing/webhook/",
             "/actuator/",
             "/v3/api-docs",
             "/swagger-ui/",
@@ -53,6 +66,9 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     /** Header through which the user ID is forwarded to downstream services. */
     private static final String USER_ID_HEADER = "X-User-Id";
+
+    /** Header through which the username is forwarded to downstream services. */
+    private static final String USER_USERNAME_HEADER = "X-User-Username";
 
     /** Header through which the user email is forwarded to downstream services. */
     private static final String USER_EMAIL_HEADER = "X-User-Email";
@@ -99,6 +115,7 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
         // -- Forward user identity to downstream services --------------------
         ServerHttpRequest mutatedRequest = request.mutate()
                 .header(USER_ID_HEADER, jwtUtil.getUserId(claims).map(String::valueOf).orElse(""))
+                .header(USER_USERNAME_HEADER, jwtUtil.getUsername(claims).orElse(""))
                 .header(USER_EMAIL_HEADER, jwtUtil.getEmail(claims).orElse(""))
                 .header(USER_ROLE_HEADER, jwtUtil.getRole(claims).orElse(""))
                 .build();
@@ -119,9 +136,18 @@ public class AuthenticationFilter implements GlobalFilter, Ordered {
 
     /**
      * Returns {@code true} if the given request path matches a public endpoint.
+     * <p>
+     * Entries ending in {@code /} (directory prefixes such as
+     * {@code /api/auth/oauth/}) match any path below them. Other entries are
+     * matched exactly or at a path-segment boundary so that a public entry
+     * like {@code /api/auth/login} can never mask a protected endpoint such as
+     * {@code /api/auth/login-history}.
      */
     private boolean isPublicPath(String path) {
-        return PUBLIC_PATHS.stream().anyMatch(path::startsWith);
+        return PUBLIC_PATHS.stream().anyMatch(publicPath ->
+                publicPath.endsWith("/")
+                        ? path.startsWith(publicPath)
+                        : path.equals(publicPath) || path.startsWith(publicPath + "/"));
     }
 
     /**

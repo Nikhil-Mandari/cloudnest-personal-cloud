@@ -1,6 +1,6 @@
 package com.cloudnest.user.service;
 
-import com.cloudnest.user.dto.CreateUserRequest;
+import com.cloudnest.user.dto.CreateProfileRequest;
 import com.cloudnest.user.dto.UpdateProfileRequest;
 import com.cloudnest.user.dto.UserProfileResponse;
 
@@ -12,20 +12,29 @@ import java.util.List;
 public interface UserService {
 
     /**
-     * Creates a new user profile.
+     * Creates a user profile using the Auth Service's numeric user ID.
+     * <p>
+     * Idempotent — if a profile with the given ID already exists it is
+     * returned unchanged, so retried provisioning never creates duplicates.
      *
-     * @param request the user creation payload
-     * @return the created user profile
+     * @param request the profile data (auth user ID, username, email, role)
+     * @return the created (or already-existing) profile
      */
-    UserProfileResponse createUser(CreateUserRequest request);
+    UserProfileResponse createProfile(CreateProfileRequest request);
 
     /**
-     * Retrieves the profile of the currently authenticated user.
+     * Retrieves the profile of the currently authenticated user, lazily
+     * creating it from the identity headers forwarded by the API Gateway
+     * when it is missing (self-healing for profiles that were never
+     * provisioned).
      *
-     * @param userId the authenticated user's ID
+     * @param userId   the authenticated user's ID
+     * @param username the username forwarded via {@code X-User-Username} (may be null)
+     * @param email    the email forwarded via {@code X-User-Email} (may be null)
+     * @param role     the role forwarded via {@code X-User-Role} (may be null)
      * @return the user's profile
      */
-    UserProfileResponse getCurrentUser(Long userId);
+    UserProfileResponse getOrCreateCurrentUser(Long userId, String username, String email, String role);
 
     /**
      * Retrieves a user profile by their unique ID.

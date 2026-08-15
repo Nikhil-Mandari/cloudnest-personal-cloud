@@ -3,6 +3,7 @@ package com.cloudnest.file.service;
 import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
+import com.cloudnest.file.dto.StorageOverviewResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
 import org.springframework.web.multipart.MultipartFile;
@@ -35,6 +36,18 @@ public interface FileService {
      * @return a list of lightweight file metadata responses
      */
     List<FileMetadataResponse> getUserFiles(Long ownerId);
+
+    /**
+     * Retrieves the active file metadata records for a specific owner, scoped
+     * to one explorer location.
+     *
+     * @param ownerId  the ID of the file owner
+     * @param folderId {@code null} = every active file (dashboard / global view),
+     *                 {@code ""} / blank = root-level files only, a UUID = the
+     *                 files inside that folder
+     * @return a list of lightweight file metadata responses
+     */
+    List<FileMetadataResponse> getUserFiles(Long ownerId, String folderId);
 
     /**
      * Retrieves detailed file metadata by its internal ID.
@@ -81,8 +94,9 @@ public interface FileService {
     FileResponse moveFile(Long id, String newFolderId, Long ownerId);
 
     /**
-     * Hard-deletes a file: removes the object from MinIO and deletes the
-     * metadata row from MySQL. On MinIO failure nothing is deleted (rollback).
+     * Soft-deletes a file by moving it to the trash: the metadata status is set
+     * to {@code DELETED} and the MinIO object is retained so the file can be
+     * restored from the trash.
      *
      * @param id      the internal primary key of the file record
      * @param ownerId the authenticated user's ID
@@ -90,7 +104,7 @@ public interface FileService {
     void deleteFile(Long id, Long ownerId);
 
     /**
-     * Restores a soft-deleted (legacy) file record by setting its status back
+     * Restores a soft-deleted (trashed) file record by setting its status back
      * to {@code ACTIVE}.
      *
      * @param id      the internal primary key of the file record
@@ -98,6 +112,33 @@ public interface FileService {
      * @return the restored file metadata in detailed response format
      */
     FileResponse restoreFile(Long id, Long ownerId);
+
+    /**
+     * Retrieves all soft-deleted (trashed) file metadata records for an owner.
+     *
+     * @param ownerId the ID of the file owner
+     * @return a list of lightweight file metadata responses
+     */
+    List<FileMetadataResponse> getTrashFiles(Long ownerId);
+
+    /**
+     * Permanently deletes a trashed file: removes the object from MinIO and
+     * deletes the metadata row from MySQL. Only files currently in the trash
+     * can be permanently deleted.
+     *
+     * @param id      the internal primary key of the file record
+     * @param ownerId the authenticated user's ID
+     */
+    void permanentlyDeleteFile(Long id, Long ownerId);
+
+    /**
+     * Permanently deletes every trashed file owned by the user (empty trash).
+     * A single failure is logged and skipped so the rest of the trash is still
+     * cleared.
+     *
+     * @param ownerId the authenticated user's ID
+     */
+    void emptyTrash(Long ownerId);
 
     /**
      * Streams a file's binary content from MinIO for download.
@@ -145,4 +186,14 @@ public interface FileService {
      * @return a list of matching lightweight file metadata responses
      */
     List<FileMetadataResponse> searchFiles(String query, Long ownerId);
+
+    /**
+     * Builds the storage analytics overview for the authenticated user:
+     * usage totals, file/folder/trash counts, largest files, file-type
+     * breakdown and weekly/monthly upload trends.
+     *
+     * @param ownerId the ID of the file owner
+     * @return the analytics overview scoped to the owner
+     */
+    StorageOverviewResponse getStorageOverview(Long ownerId);
 }

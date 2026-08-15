@@ -1,6 +1,7 @@
 package com.cloudnest.file.repository;
 
 import com.cloudnest.file.entity.FileMetadata;
+import com.cloudnest.file.entity.FileMetadata.FileStatus;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
@@ -37,12 +38,46 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Long
     List<FileMetadata> findFavoritesByOwnerId(@Param("ownerId") Long ownerId);
 
     /**
+     * Finds all active file metadata records belonging to a specific owner
+     * inside the given folder.
+     *
+     * @param ownerId  the ID of the file owner
+     * @param folderId the folder UUID
+     * @return a list of active file metadata records in the folder
+     */
+    @Query("SELECT f FROM FileMetadata f WHERE f.ownerId = :ownerId " +
+           "AND f.folderId = :folderId AND f.status = 'ACTIVE'")
+    List<FileMetadata> findByOwnerIdAndFolderIdAndStatus(
+            @Param("ownerId") Long ownerId, @Param("folderId") String folderId);
+
+    /**
+     * Finds all active file metadata records belonging to a specific owner
+     * that live at the root level (no folder assigned).
+     *
+     * @param ownerId the ID of the file owner
+     * @return a list of active root-level file metadata records
+     */
+    @Query("SELECT f FROM FileMetadata f WHERE f.ownerId = :ownerId " +
+           "AND f.folderId IS NULL AND f.status = 'ACTIVE'")
+    List<FileMetadata> findRootFilesByOwnerId(@Param("ownerId") Long ownerId);
+
+    /**
      * Finds a file metadata record by its public-facing file ID (UUID).
      *
      * @param fileId the unique file identifier
      * @return an {@link Optional} containing the matching record, or empty if not found
      */
     Optional<FileMetadata> findByFileId(String fileId);
+
+    /**
+     * Finds all file metadata records belonging to a specific owner with a
+     * given lifecycle status (e.g. trash files where status is {@code DELETED}).
+     *
+     * @param ownerId the ID of the file owner
+     * @param status  the lifecycle status to filter by
+     * @return a list of matching file metadata records
+     */
+    List<FileMetadata> findByOwnerIdAndStatus(Long ownerId, FileStatus status);
 
     /**
      * Finds a file metadata record by its internal ID, restricted to a specific owner.
@@ -82,10 +117,10 @@ public interface FileMetadataRepository extends JpaRepository<FileMetadata, Long
     /**
      * Finds all file metadata records within a specific folder.
      *
-     * @param folderId the ID of the folder
+     * @param folderId the folder UUID (matches {@link FileMetadata#folderId})
      * @return a list of file metadata records in the specified folder
      */
-    List<FileMetadata> findByFolderId(Long folderId);
+    List<FileMetadata> findByFolderId(String folderId);
 
     /**
      * Checks whether a stored file name is already taken.

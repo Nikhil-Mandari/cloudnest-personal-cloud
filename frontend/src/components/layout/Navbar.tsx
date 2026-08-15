@@ -1,7 +1,7 @@
 import { Menu } from 'lucide-react';
 
 import { useUiStore } from '@/store/uiStore';
-import { SearchBar } from '@/components/common/SearchBar';
+import { GlobalSearch } from './GlobalSearch';
 import { NotificationBell } from './NotificationBell';
 import { ThemeToggle } from './ThemeToggle';
 import { UserMenu } from './UserMenu';
@@ -20,9 +20,9 @@ export function Navbar() {
         <Menu className="h-5 w-5" />
       </button>
 
-      {/* Global search — placeholder for now */}
+      {/* Global search — searches files (server-side) and folders across the workspace */}
       <div className="hidden md:block md:max-w-md md:flex-1">
-        <SearchBar placeholder="Search files and folders…" />
+        <GlobalSearch />
       </div>
 
       <div className="ml-auto flex items-center gap-1.5">

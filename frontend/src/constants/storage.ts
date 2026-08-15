@@ -9,4 +9,8 @@ export const STORAGE_KEYS = {
   theme: 'cloudnest-theme',
   ui: 'cloudnest-ui',
   files: 'cloudnest-files',
+  folders: 'cloudnest-folders',
+  recentSearches: 'cloudnest-recent-searches',
+  /** Stable per-browser device id used for OTP / trusted-device flows. */
+  deviceId: 'cloudnest-device-id',
 } as const;

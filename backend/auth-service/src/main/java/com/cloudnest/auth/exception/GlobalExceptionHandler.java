@@ -74,7 +74,10 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Handles invalid credentials (wrong password during login).
+     * Handles invalid credentials (wrong password during login, invalid 2FA
+     * code, expired/invalid challenge or refresh tokens). The exception's own
+     * message is surfaced so 2FA failures show a meaningful message instead of
+     * the generic password error.
      */
     @ExceptionHandler(BadCredentialsException.class)
     public ResponseEntity<ErrorResponse> handleBadCredentials(
@@ -82,7 +85,7 @@ public class GlobalExceptionHandler {
 
         ErrorResponse response = ErrorResponse.builder()
                 .success(false)
-                .message("Invalid username/email or password")
+                .message(ex.getMessage())
                 .status(HttpStatus.UNAUTHORIZED.value())
                 .error(HttpStatus.UNAUTHORIZED.getReasonPhrase())
                 .path(request.getRequestURI())
@@ -109,6 +112,25 @@ public class GlobalExceptionHandler {
                 .build();
 
         return ResponseEntity.status(HttpStatus.NOT_FOUND).body(response);
+    }
+
+    /**
+     * Handles requests that are too frequent (OTP resend cooldown).
+     */
+    @ExceptionHandler(RateLimitException.class)
+    public ResponseEntity<ErrorResponse> handleRateLimit(
+            RateLimitException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.TOO_MANY_REQUESTS.value())
+                .error(HttpStatus.TOO_MANY_REQUESTS.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).body(response);
     }
 
     /**

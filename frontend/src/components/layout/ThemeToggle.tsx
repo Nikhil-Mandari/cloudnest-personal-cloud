@@ -1,17 +1,31 @@
 import { motion } from 'framer-motion';
-import { Moon, Sun } from 'lucide-react';
+import { Monitor, Moon, Sun } from 'lucide-react';
 
-import { useThemeStore } from '@/store/themeStore';
+import { useThemeStore, type Theme } from '@/store/themeStore';
+
+const THEME_ICONS: Record<Theme, typeof Sun> = {
+  light: Sun,
+  dark: Moon,
+  system: Monitor,
+};
+
+const NEXT_MODE: Record<Theme, string> = {
+  light: 'dark',
+  dark: 'system',
+  system: 'light',
+};
 
 export function ThemeToggle() {
   const theme = useThemeStore((state) => state.theme);
   const toggleTheme = useThemeStore((state) => state.toggleTheme);
+  const Icon = THEME_ICONS[theme];
 
   return (
     <button
       type="button"
       onClick={toggleTheme}
-      aria-label={theme === 'dark' ? 'Switch to light mode' : 'Switch to dark mode'}
+      aria-label={`Theme: ${theme}. Switch to ${NEXT_MODE[theme]} mode.`}
+      title={`Switch to ${NEXT_MODE[theme]} mode`}
       className="grid h-10 w-10 place-items-center rounded-lg text-gray-500 transition-colors hover:bg-gray-100 hover:text-gray-900 dark:text-gray-400 dark:hover:bg-gray-800 dark:hover:text-white"
     >
       <motion.span
@@ -21,7 +35,7 @@ export function ThemeToggle() {
         transition={{ duration: 0.25, ease: 'easeOut' }}
         className="inline-flex"
       >
-        {theme === 'dark' ? <Sun className="h-5 w-5" /> : <Moon className="h-5 w-5" />}
+        <Icon className="h-5 w-5" />
       </motion.span>
     </button>
   );

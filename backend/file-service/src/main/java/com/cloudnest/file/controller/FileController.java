@@ -3,6 +3,7 @@ package com.cloudnest.file.controller;
 import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
+import com.cloudnest.file.dto.StorageOverviewResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
 import com.cloudnest.file.service.FileService;
@@ -131,10 +132,16 @@ public class FileController {
     }
 
     /**
-     * Lists all active file metadata records for the authenticated user.
+     * Lists active file metadata records for the authenticated user, scoped to
+     * the given explorer location.
+     * <p>
+     * The {@code folderId} query parameter matches the frontend explorer
+     * contract: absent = every active file (dashboard / global view), blank =
+     * root-level files only, a UUID = the files inside that folder.
      */
     @Operation(summary = "List user files",
-            description = "Returns all active file metadata records owned by the authenticated user.")
+            description = "Returns active file metadata records owned by the authenticated user, " +
+                    "optionally scoped to a folder (blank = root, absent = all).")
     @ApiResponses(value = {
             @ApiResponse(responseCode = "200", description = "Files retrieved successfully"),
             @ApiResponse(responseCode = "401", description = "Missing user identity"),
@@ -144,17 +151,53 @@ public class FileController {
     public ResponseEntity<StandardResponse<List<FileMetadataResponse>>> listUserFiles(
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader,
+            @Parameter(description = "Explorer location: omitted = all files, blank = root, " +
+                    "UUID = files inside that folder", example = "7c9e6679-7425-40de-944b-e07fc1f90ae7")
+            @RequestParam(required = false) String folderId,
             HttpServletRequest httpRequest) {
 
-        log.info("GET /api/files - userId={}", userIdHeader);
+        log.info("GET /api/files - userId={}, folderId={}", userIdHeader, folderId);
 
-        List<FileMetadataResponse> files = fileService.getUserFiles(userIdHeader);
+        List<FileMetadataResponse> files = fileService.getUserFiles(userIdHeader, folderId);
 
         return ResponseEntity.ok(
                 StandardResponse.<List<FileMetadataResponse>>builder()
                         .success(true)
                         .message("Files retrieved successfully")
                         .data(files)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Returns the storage analytics overview for the authenticated user.
+     * <p>
+     * Literal two-segment path — it cannot collide with the single-segment
+     * {@code /{id}} mapping, just like {@code /search} and {@code /trash}.
+     */
+    @Operation(summary = "Storage analytics overview",
+            description = "Returns storage usage, file/folder/trash counts, largest files, " +
+                    "file-type breakdown and weekly/monthly upload trends for the authenticated user.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Storage overview retrieved successfully"),
+            @ApiResponse(responseCode = "401", description = "Missing user identity"),
+            @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
+    @GetMapping("/stats/overview")
+    public ResponseEntity<StandardResponse<StorageOverviewResponse>> getStorageOverview(
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("GET /api/files/stats/overview - userId={}", userIdHeader);
+
+        StorageOverviewResponse overview = fileService.getStorageOverview(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<StorageOverviewResponse>builder()
+                        .success(true)
+                        .message("Storage overview retrieved successfully")
+                        .data(overview)
                         .path(httpRequest.getRequestURI())
                         .build());
     }
@@ -222,6 +265,37 @@ public class FileController {
     }
 
     /**
+     * Lists all soft-deleted (trashed) file metadata records for the
+     * authenticated user.
+     */
+    @Operation(summary = "List trashed files",
+            description = "Returns all soft-deleted file metadata records owned by the authenticated user " +
+                    "(files that were moved to the trash).")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Trashed files retrieved successfully"),
+            @ApiResponse(responseCode = "401", description = "Missing user identity"),
+            @ApiResponse(responseCode = "500", description = "Unexpected server error")
+    })
+    @GetMapping("/trash")
+    public ResponseEntity<StandardResponse<List<FileMetadataResponse>>> listTrashFiles(
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("GET /api/files/trash - userId={}", userIdHeader);
+
+        List<FileMetadataResponse> files = fileService.getTrashFiles(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<List<FileMetadataResponse>>builder()
+                        .success(true)
+                        .message("Trashed files retrieved successfully")
+                        .data(files)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
      * Marks (or unmarks) a file as favorite.
      */
     @Operation(summary = "Mark / unmark a file as favorite",
@@ -273,6 +347,9 @@ public class FileController {
     public ResponseEntity<StandardResponse<FileResponse>> getFileById(
             @Parameter(description = "Internal file ID", example = "1")
             @PathVariable Long id,
+            // Internal consumers (Share Service) must send the resource owner's
+            // ID so ownership is always enforced. The API Gateway injects this
+            // header for every external call.
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
@@ -316,6 +393,9 @@ public class FileController {
     public ResponseEntity<Resource> downloadFile(
             @Parameter(description = "Internal file ID", example = "1")
             @PathVariable Long id,
+            // Internal consumers (Share Service) send the resource owner's ID so
+            // ownership checks still run; external callers carry the
+            // gateway-injected X-User-Id.
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader) {
 
@@ -357,6 +437,9 @@ public class FileController {
     public ResponseEntity<Resource> previewFile(
             @Parameter(description = "Internal file ID", example = "1")
             @PathVariable Long id,
+            // Internal consumers (Share Service) send the resource owner's ID so
+            // ownership checks still run; external callers carry the
+            // gateway-injected X-User-Id.
             @Parameter(hidden = true)
             @RequestHeader("X-User-Id") Long userIdHeader) {
 
@@ -459,22 +542,24 @@ public class FileController {
     }
 
     /**
-     * Hard-deletes a file: removes the object from MinIO and deletes the
-     * metadata row from MySQL.
+     * Moves a file to the trash (soft delete). The metadata status is set to
+     * {@code DELETED}; the MinIO object is retained so the file can be restored
+     * from the trash.
      *
      * @param id           the internal primary key of the file record
      * @param userIdHeader the authenticated user's ID
      * @param httpRequest  the current HTTP request (for building response path)
      * @return 200 OK confirming the deletion
      */
-    @Operation(summary = "Delete a file",
-            description = "Permanently deletes a file: removes the object from MinIO and deletes the " +
-                    "metadata row from MySQL. If the MinIO deletion fails, nothing is deleted.")
+    @Operation(summary = "Move a file to the trash",
+            description = "Soft-deletes a file: its status is set to DELETED and the MinIO object is " +
+                    "retained so the file can be restored from the trash.")
     @ApiResponses(value = {
-            @ApiResponse(responseCode = "200", description = "File deleted successfully"),
+            @ApiResponse(responseCode = "200", description = "File moved to trash successfully"),
+            @ApiResponse(responseCode = "400", description = "File is already in the trash"),
             @ApiResponse(responseCode = "403", description = "File belongs to another user"),
             @ApiResponse(responseCode = "404", description = "File not found"),
-            @ApiResponse(responseCode = "500", description = "MinIO failure")
+            @ApiResponse(responseCode = "500", description = "Unexpected server error")
     })
     @DeleteMapping("/{id}")
     public ResponseEntity<StandardResponse<Void>> deleteFile(
@@ -491,7 +576,79 @@ public class FileController {
         return ResponseEntity.ok(
                 StandardResponse.<Void>builder()
                         .success(true)
-                        .message("File deleted successfully")
+                        .message("File moved to trash")
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Permanently deletes a trashed file: removes the object from MinIO and
+     * deletes the metadata row from MySQL. This cannot be undone.
+     *
+     * @param id           the internal primary key of the file record
+     * @param userIdHeader the authenticated user's ID
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK confirming the deletion
+     */
+    @Operation(summary = "Permanently delete a trashed file",
+            description = "Permanently removes a trashed file: the MinIO object is deleted and the " +
+                    "metadata row is removed from MySQL. This cannot be undone.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "File permanently deleted"),
+            @ApiResponse(responseCode = "400", description = "File is not in the trash"),
+            @ApiResponse(responseCode = "403", description = "File belongs to another user"),
+            @ApiResponse(responseCode = "404", description = "File not found"),
+            @ApiResponse(responseCode = "500", description = "MinIO failure")
+    })
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<StandardResponse<Void>> permanentlyDeleteFile(
+            @Parameter(description = "Internal file ID", example = "1")
+            @PathVariable Long id,
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("DELETE /api/files/{}/permanent - userId={}", id, userIdHeader);
+
+        fileService.permanentlyDeleteFile(id, userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<Void>builder()
+                        .success(true)
+                        .message("File permanently deleted")
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Permanently deletes every trashed file owned by the authenticated user.
+     *
+     * @param userIdHeader the authenticated user's ID
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK confirming the operation
+     */
+    @Operation(summary = "Empty the trash",
+            description = "Permanently deletes every trashed file owned by the authenticated user. " +
+                    "This cannot be undone.")
+    @ApiResponses(value = {
+            @ApiResponse(responseCode = "200", description = "Trash emptied successfully"),
+            @ApiResponse(responseCode = "401", description = "Missing user identity"),
+            @ApiResponse(responseCode = "500", description = "MinIO or database failure")
+    })
+    @DeleteMapping("/trash")
+    public ResponseEntity<StandardResponse<Void>> emptyTrash(
+            @Parameter(hidden = true)
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("DELETE /api/files/trash - userId={}", userIdHeader);
+
+        fileService.emptyTrash(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<Void>builder()
+                        .success(true)
+                        .message("Trash emptied successfully")
                         .path(httpRequest.getRequestURI())
                         .build());
     }

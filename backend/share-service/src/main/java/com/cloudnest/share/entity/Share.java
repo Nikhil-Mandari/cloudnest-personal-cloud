@@ -84,6 +84,14 @@ public class Share {
     private String shareToken;
 
     /**
+     * SHA-256 hash of the optional link password. Null means the link is
+     * openly accessible with the token. Only the hash is stored — never the
+     * plain-text password.
+     */
+    @Column(name = "password_hash", length = 64)
+    private String passwordHash;
+
+    /**
      * Whether this share is publicly accessible without authentication.
      */
     @Column(name = "is_public", nullable = false)
@@ -114,9 +122,13 @@ public class Share {
 
     /**
      * Enum representing the permission level granted to the share recipient.
+     * <p>
+     * {@code DOWNLOAD} matches the frontend's "Download only" share option and
+     * permits downloading through the public link while keeping editing off.
      */
     public enum Permission {
         VIEW,
+        DOWNLOAD,
         EDIT
     }
 }

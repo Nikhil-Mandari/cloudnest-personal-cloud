@@ -13,6 +13,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -131,6 +132,108 @@ public class FolderController {
     }
 
     /**
+     * Lists all soft-deleted (trashed) folders for the authenticated user.
+     *
+     * @param userIdHeader the authenticated user's UUID (set by API Gateway from JWT)
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK with a list of trashed folders
+     */
+    @GetMapping("/trash")
+    public ResponseEntity<StandardResponse<List<FolderResponse>>> getTrashFolders(
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("GET /api/folders/trash - userId={}", userIdHeader);
+
+        List<FolderResponse> trashFolders = folderService.getTrashFolders(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<List<FolderResponse>>builder()
+                        .success(true)
+                        .message("Trashed folders retrieved successfully")
+                        .data(trashFolders)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Restores a soft-deleted folder (and its descendants) from the trash.
+     *
+     * @param id           the UUID of the folder to restore
+     * @param userIdHeader the authenticated user's UUID (set by API Gateway from JWT)
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK with the restored folder
+     */
+    @PatchMapping("/{id}/restore")
+    public ResponseEntity<StandardResponse<FolderResponse>> restoreFolder(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("PATCH /api/folders/{}/restore - userId={}", id, userIdHeader);
+
+        FolderResponse response = folderService.restoreFolder(id, userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<FolderResponse>builder()
+                        .success(true)
+                        .message("Folder restored successfully")
+                        .data(response)
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Permanently deletes a soft-deleted folder and all its descendants.
+     *
+     * @param id           the UUID of the folder to delete
+     * @param userIdHeader the authenticated user's UUID (set by API Gateway from JWT)
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK confirming the deletion
+     */
+    @DeleteMapping("/{id}/permanent")
+    public ResponseEntity<StandardResponse<Void>> permanentlyDeleteFolder(
+            @PathVariable UUID id,
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("DELETE /api/folders/{}/permanent - userId={}", id, userIdHeader);
+
+        folderService.permanentlyDeleteFolder(id, userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<Void>builder()
+                        .success(true)
+                        .message("Folder permanently deleted")
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
+     * Permanently deletes every trashed folder owned by the authenticated user.
+     *
+     * @param userIdHeader the authenticated user's UUID (set by API Gateway from JWT)
+     * @param httpRequest  the current HTTP request (for building response path)
+     * @return 200 OK confirming the operation
+     */
+    @DeleteMapping("/trash")
+    public ResponseEntity<StandardResponse<Void>> emptyTrash(
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            HttpServletRequest httpRequest) {
+
+        log.info("DELETE /api/folders/trash - userId={}", userIdHeader);
+
+        folderService.emptyTrash(userIdHeader);
+
+        return ResponseEntity.ok(
+                StandardResponse.<Void>builder()
+                        .success(true)
+                        .message("Trash emptied successfully")
+                        .path(httpRequest.getRequestURI())
+                        .build());
+    }
+
+    /**
      * Retrieves a single folder by its UUID.
      *
      * @param id           the UUID of the folder
@@ -141,6 +244,9 @@ public class FolderController {
     @GetMapping("/{id}")
     public ResponseEntity<StandardResponse<FolderResponse>> getFolder(
             @PathVariable UUID id,
+            // Internal consumers (Share Service) send the resource owner's ID so
+            // ownership checks still run; the API Gateway injects this header
+            // for every external call.
             @RequestHeader("X-User-Id") Long userIdHeader,
             HttpServletRequest httpRequest) {
 

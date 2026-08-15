@@ -8,14 +8,43 @@ import { getErrorMessage } from '@/utils/error';
 
 export const FILES_QUERY_KEY = ['files'] as const;
 
-/** Lists the authenticated user's active files. */
-export function useFilesQuery() {
+/** Minimum query length before the server-side search fires. */
+export const MIN_SEARCH_QUERY_LENGTH = 2;
+
+/**
+ * Lists files at the current explorer location.
+ *
+ * - {@code undefined} — every active file (dashboard / global views)
+ * - {@code null}      — root-level files only
+ * - a UUID            — files inside that folder
+ *
+ * The cache is scoped per location; invalidating `FILES_QUERY_KEY` (partial
+ * match) refreshes every scope at once.
+ */
+export function useFilesQuery(folderId?: string | null) {
+  const scope = folderId === undefined ? 'all' : folderId ?? 'root';
   return useQuery({
-    queryKey: FILES_QUERY_KEY,
+    queryKey: [...FILES_QUERY_KEY, scope],
     queryFn: async () => {
-      const { data } = await fileService.getFiles();
+      const { data } = await fileService.getFiles(folderId);
       return data.data;
     },
+  });
+}
+
+/**
+ * Server-side file search (file-service `/files/search`). Only fires once the
+ * query is at least {@link MIN_SEARCH_QUERY_LENGTH} characters.
+ */
+export function useFileSearchQuery(query: string) {
+  return useQuery({
+    queryKey: [...FILES_QUERY_KEY, 'search', query.trim().toLowerCase()],
+    queryFn: async () => {
+      const { data } = await fileService.searchFiles(query);
+      return data.data;
+    },
+    enabled: query.trim().length >= MIN_SEARCH_QUERY_LENGTH,
+    staleTime: 30_000,
   });
 }
 
@@ -51,10 +80,10 @@ export function useFileMutations() {
   const deleteFile = useMutation({
     mutationFn: (id: number) => fileService.deleteFile(id),
     onSuccess: () => {
-      toast.success('File deleted');
+      toast.success('File moved to trash');
       void invalidateFiles();
     },
-    onError: (error) => toast.error(getErrorMessage(error, 'Failed to delete the file.')),
+    onError: (error) => toast.error(getErrorMessage(error, 'Failed to move the file to trash.')),
   });
 
   const moveFile = useMutation({
@@ -70,11 +99,16 @@ export function useFileMutations() {
     mutationFn: ({ id, favorite }: { id: number; favorite: boolean }) =>
       fileService.setFavorite(id, favorite),
     onSuccess: (response, variables) => {
-      // Update the cache in place so the star flips instantly, then reconcile.
-      queryClient.setQueryData<FileItem[]>(FILES_QUERY_KEY, (current) =>
-        current?.map((item) =>
-          item.id === variables.id ? { ...item, isFavorite: response.data.data.isFavorite } : item,
-        ),
+      // Update every folder-scoped cache in place so the star flips instantly,
+      // then reconcile. `setQueriesData` partial-matches all `['files', ...]` keys.
+      queryClient.setQueriesData<FileItem[]>(
+        { queryKey: FILES_QUERY_KEY },
+        (current) =>
+          current?.map((item) =>
+            item.id === variables.id
+              ? { ...item, isFavorite: response.data.data.isFavorite }
+              : item,
+          ),
       );
       toast.success(variables.favorite ? 'Added to favorites' : 'Removed from favorites');
     },

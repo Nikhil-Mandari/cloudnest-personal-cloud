@@ -1,5 +1,5 @@
-import { Suspense } from 'react';
-import { motion } from 'framer-motion';
+import { Suspense, useEffect } from 'react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { Outlet, useLocation } from 'react-router-dom';
 import { Share2, ShieldCheck, Zap } from 'lucide-react';
 
@@ -15,6 +15,11 @@ const FEATURES = [
 
 export function AuthLayout() {
   const location = useLocation();
+
+  // New page = new scroll position (consistent with the dashboard layout).
+  useEffect(() => {
+    window.scrollTo(0, 0);
+  }, [location.pathname]);
 
   return (
     <div className="flex min-h-screen bg-gray-50 dark:bg-gray-950">
@@ -61,18 +66,22 @@ export function AuthLayout() {
             <Brand />
           </div>
 
-          <Suspense fallback={<Loader className="py-24" />}>
+          {/* Animated route transitions — same exit/enter feel as the dashboard. */}
+          <AnimatePresence mode="wait" initial={false}>
             <motion.div
               key={location.pathname}
-              initial={{ opacity: 0, y: 16, scale: 0.99 }}
+              initial={{ opacity: 0, y: 12, scale: 0.99 }}
               animate={{ opacity: 1, y: 0, scale: 1 }}
-              transition={{ duration: 0.3, ease: 'easeOut' }}
+              exit={{ opacity: 0, y: -8, scale: 0.99 }}
+              transition={{ duration: 0.22, ease: 'easeOut' }}
             >
-              <Card className="p-7 shadow-xl shadow-gray-900/5 sm:p-9">
-                <Outlet />
-              </Card>
+              <Suspense fallback={<Loader className="py-24" />}>
+                <Card className="p-7 shadow-xl shadow-gray-900/5 sm:p-9">
+                  <Outlet />
+                </Card>
+              </Suspense>
             </motion.div>
-          </Suspense>
+          </AnimatePresence>
         </div>
       </div>
     </div>

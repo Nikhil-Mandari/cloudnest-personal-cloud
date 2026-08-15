@@ -1,11 +1,14 @@
 package com.cloudnest.file.service.impl;
 
+import com.cloudnest.file.client.BillingServiceClient;
 import com.cloudnest.file.client.FolderServiceClient;
 import com.cloudnest.file.config.MinioProperties;
 import com.cloudnest.file.dto.FileDownloadResponse;
 import com.cloudnest.file.dto.FileMetadataResponse;
 import com.cloudnest.file.dto.FileResponse;
 import com.cloudnest.file.dto.FolderResponse;
+import com.cloudnest.file.dto.QuotaResponse;
+import com.cloudnest.file.dto.StorageOverviewResponse;
 import com.cloudnest.file.dto.UpdateFileRequest;
 import com.cloudnest.file.dto.UploadFileRequest;
 import com.cloudnest.file.entity.FileMetadata;
@@ -15,6 +18,7 @@ import com.cloudnest.file.exception.DuplicateResourceException;
 import com.cloudnest.file.exception.FileStorageException;
 import com.cloudnest.file.exception.FileTooLargeException;
 import com.cloudnest.file.exception.ForbiddenException;
+import com.cloudnest.file.exception.QuotaExceededException;
 import com.cloudnest.file.exception.ResourceNotFoundException;
 import com.cloudnest.file.exception.UnauthorizedException;
 import com.cloudnest.file.mapper.FileMapper;
@@ -32,9 +36,15 @@ import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.format.TextStyle;
+import java.util.ArrayList;
+import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -59,28 +69,75 @@ public class FileServiceImpl implements FileService {
             "image/jpeg",
             "image/jpg",
             "image/gif",
-            "text/plain"
+            // Modern browsers render these directly; without them an uploaded
+            // WebP / AVIF / BMP / SVG / TIFF image shows "Preview not available"
+            // even though the frontend treats every image/* as previewable.
+            "image/webp",
+            "image/avif",
+            "image/bmp",
+            "image/svg+xml",
+            "image/tiff",
+            "image/x-tiff",
+            "image/x-icon",
+            "image/heic",
+            "image/heif",
+            "video/mp4",
+            "video/webm",
+            "video/ogg",
+            "video/quicktime",
+            "video/x-msvideo",
+            "video/x-matroska",
+            "video/3gpp",
+            "audio/mpeg",
+            "audio/mp4",
+            "audio/ogg",
+            "audio/wav",
+            "audio/x-wav",
+            "audio/webm",
+            "audio/aac",
+            "audio/flac",
+            "audio/x-m4a",
+            "text/plain",
+            "text/markdown"
     );
 
     private static final String DEFAULT_CONTENT_TYPE = "application/octet-stream";
+
+    /**
+     * Fallback previewability by file-name extension — used when the stored
+     * content type is missing or generic (uploads that arrived without a MIME
+     * type). Keeps extension-based preview working for those records.
+     */
+    private static final Set<String> PREVIEWABLE_EXTENSIONS = Set.of(
+            ".pdf", ".png", ".jpg", ".jpeg", ".gif", ".webp", ".avif", ".bmp",
+            ".svg", ".tiff", ".tif", ".ico",
+            ".mp4", ".webm", ".mov", ".m4v", ".ogv", ".avi", ".mkv", ".3gp",
+            ".mp3", ".wav", ".oga", ".ogg", ".aac", ".flac", ".m4a",
+            ".txt", ".md", ".json", ".xml", ".yml", ".yaml", ".csv", ".log",
+            ".js", ".ts", ".tsx", ".jsx", ".html", ".css", ".sh", ".py",
+            ".java", ".c", ".cpp", ".cs", ".go", ".rs", ".rb", ".php", ".sql"
+    );
 
     private final FileMetadataRepository fileMetadataRepository;
     private final FileMapper fileMapper;
     private final MinioService minioService;
     private final MinioProperties minioProperties;
     private final FolderServiceClient folderServiceClient;
+    private final BillingServiceClient billingServiceClient;
 
     public FileServiceImpl(
             FileMetadataRepository fileMetadataRepository,
             FileMapper fileMapper,
             MinioService minioService,
             MinioProperties minioProperties,
-            FolderServiceClient folderServiceClient) {
+            FolderServiceClient folderServiceClient,
+            BillingServiceClient billingServiceClient) {
         this.fileMetadataRepository = fileMetadataRepository;
         this.fileMapper = fileMapper;
         this.minioService = minioService;
         this.minioProperties = minioProperties;
         this.folderServiceClient = folderServiceClient;
+        this.billingServiceClient = billingServiceClient;
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -103,6 +160,7 @@ public class FileServiceImpl implements FileService {
         validateOwner(request.getOwnerId());
         validateFileForUpload(file);
         validateFolder(request.getFolderId(), request.getOwnerId());
+        enforceQuota(request.getOwnerId(), file.getSize());
 
         // ── Derive storage metadata ───────────────────────────────────────────
         String originalFileName = FileNameUtil.sanitizeFileName(request.getOriginalFileName());
@@ -177,10 +235,40 @@ public class FileServiceImpl implements FileService {
     }
 
     /**
+     * Retrieves the active file metadata records for a specific owner, scoped
+     * to one explorer location.
+     * <p>
+     * The explorer (Files / Folders pages) always sends a {@code folderId}
+     * hint: absent = global "all files" view, blank = root level, UUID = a
+     * specific folder. Without this scoping every folder view would show the
+     * user's complete file set, which surfaces as files appearing in the wrong
+     * location (and duplicated across views) after uploads and moves.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<FileMetadataResponse> getUserFiles(Long ownerId, String folderId) {
+        log.debug("Fetching files for ownerId={}, folderId={}", ownerId, folderId);
+
+        if (folderId == null) {
+            // Dashboard / global view — every active file.
+            return getUserFiles(ownerId);
+        }
+
+        List<FileMetadata> files = folderId.isBlank()
+                ? fileMetadataRepository.findRootFilesByOwnerId(ownerId)
+                : fileMetadataRepository.findByOwnerIdAndFolderIdAndStatus(ownerId, folderId);
+
+        return files.stream()
+                .map(fileMapper::toMetadataResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
      * Retrieves detailed file metadata by its internal ID.
      * <p>
-     * Ownership is enforced when an owner context is supplied (external API
-     * calls); internal Feign consumers (e.g. Share Service) pass {@code null}.
+     * Ownership is always enforced: external callers arrive through the API
+     * Gateway with the authenticated user's ID, and internal Feign consumers
+     * (Share Service) forward the resource owner's ID.
      */
     @Override
     @Transactional(readOnly = true)
@@ -262,32 +350,34 @@ public class FileServiceImpl implements FileService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
-    // Delete (hard delete: MinIO object + MySQL row)
+    // Delete (soft delete: move to trash)
     // ─────────────────────────────────────────────────────────────────────────
 
     /**
-     * Hard-deletes a file: removes the object from MinIO first, then deletes
-     * the metadata row from MySQL. If the MinIO deletion fails, nothing is
-     * deleted (rollback-safe).
+     * Soft-deletes a file by moving it to the trash: the metadata status is set
+     * to {@code DELETED} and the MinIO object is retained so the file can be
+     * restored from the trash.
      */
     @Override
     public void deleteFile(Long id, Long ownerId) {
-        log.debug("Hard-deleting file: id={}, ownerId={}", id, ownerId);
+        log.debug("Soft-deleting file: id={}, ownerId={}", id, ownerId);
 
         FileMetadata fileMetadata = findOwnedFile(id, ownerId);
 
-        // ── 1. Remove the object from MinIO ────────────────────────────────────
-        minioService.deleteObject(fileMetadata.getObjectName());
+        if (fileMetadata.getStatus() == FileStatus.DELETED) {
+            log.warn("File is already in the trash: id={}", id);
+            throw new BadRequestException("File is already in the trash");
+        }
 
-        // ── 2. Delete the metadata row from MySQL ──────────────────────────────
-        fileMetadataRepository.delete(fileMetadata);
+        fileMetadata.setStatus(FileStatus.DELETED);
+        FileMetadata saved = fileMetadataRepository.save(fileMetadata);
 
-        log.info("File deleted successfully: id={}, fileId={}, objectName={}",
-                id, fileMetadata.getFileId(), fileMetadata.getObjectName());
+        log.info("File moved to trash: id={}, fileId={}",
+                saved.getId(), saved.getFileId());
     }
 
     /**
-     * Restores a soft-deleted (legacy) file record by setting its status back
+     * Restores a soft-deleted (trashed) file record by setting its status back
      * to {@code ACTIVE}.
      */
     @Override
@@ -308,6 +398,75 @@ public class FileServiceImpl implements FileService {
                 saved.getId(), saved.getFileId());
 
         return fileMapper.toFileResponse(saved);
+    }
+
+    /**
+     * Retrieves all soft-deleted (trashed) file metadata records for an owner.
+     * Only records with {@code DELETED} status are returned.
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public List<FileMetadataResponse> getTrashFiles(Long ownerId) {
+        log.debug("Fetching trashed files for ownerId={}", ownerId);
+
+        return fileMetadataRepository.findByOwnerIdAndStatus(ownerId, FileStatus.DELETED)
+                .stream()
+                .map(fileMapper::toMetadataResponse)
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Permanently deletes a trashed file: removes the object from MinIO first,
+     * then deletes the metadata row from MySQL. Only files that are currently
+     * in the trash can be permanently deleted.
+     */
+    @Override
+    public void permanentlyDeleteFile(Long id, Long ownerId) {
+        log.debug("Permanently deleting file: id={}, ownerId={}", id, ownerId);
+
+        FileMetadata fileMetadata = findOwnedFile(id, ownerId);
+
+        if (fileMetadata.getStatus() != FileStatus.DELETED) {
+            log.warn("File is not in the trash: id={}", id);
+            throw new BadRequestException("Only files in the trash can be permanently deleted");
+        }
+
+        // ── 1. Remove the object from MinIO ────────────────────────────────────
+        minioService.deleteObject(fileMetadata.getObjectName());
+
+        // ── 2. Delete the metadata row from MySQL ──────────────────────────────
+        fileMetadataRepository.delete(fileMetadata);
+
+        log.info("File permanently deleted: id={}, fileId={}, objectName={}",
+                id, fileMetadata.getFileId(), fileMetadata.getObjectName());
+    }
+
+    /**
+     * Permanently deletes every trashed file owned by the user (empty trash).
+     * A single failure is logged and skipped so the rest of the trash is still
+     * cleared.
+     */
+    @Override
+    public void emptyTrash(Long ownerId) {
+        log.debug("Emptying trash for ownerId={}", ownerId);
+
+        List<FileMetadata> trashFiles =
+                fileMetadataRepository.findByOwnerIdAndStatus(ownerId, FileStatus.DELETED);
+
+        int deleted = 0;
+        for (FileMetadata file : trashFiles) {
+            try {
+                minioService.deleteObject(file.getObjectName());
+                fileMetadataRepository.delete(file);
+                deleted++;
+            } catch (RuntimeException e) {
+                log.error("Failed to permanently delete file id={} while emptying trash: {}",
+                        file.getId(), e.getMessage());
+            }
+        }
+
+        log.info("Trash emptied: {} of {} file(s) permanently deleted for ownerId={}",
+                deleted, trashFiles.size(), ownerId);
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -347,7 +506,7 @@ public class FileServiceImpl implements FileService {
 
         FileMetadata fileMetadata = findActiveOwnedFile(id, ownerId);
 
-        if (!isPreviewable(fileMetadata.getContentType())) {
+        if (!isPreviewable(fileMetadata.getContentType(), fileMetadata.getOriginalFileName())) {
             log.warn("Preview not supported for content type '{}' on file id={}",
                     fileMetadata.getContentType(), id);
             throw new BadRequestException(
@@ -432,6 +591,171 @@ public class FileServiceImpl implements FileService {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Storage analytics
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /**
+     * Builds the storage analytics overview for a user from the metadata in
+     * MySQL (folder count is delegated to the Folder Service via Feign).
+     */
+    @Override
+    @Transactional(readOnly = true)
+    public StorageOverviewResponse getStorageOverview(Long ownerId) {
+        log.debug("Building storage overview for ownerId={}", ownerId);
+
+        validateOwner(ownerId);
+
+        List<FileMetadata> active = fileMetadataRepository.findByOwnerId(ownerId).stream()
+                .filter(file -> file.getStatus() == FileStatus.ACTIVE)
+                .collect(Collectors.toList());
+        List<FileMetadata> trash = fileMetadataRepository.findByOwnerIdAndStatus(ownerId, FileStatus.DELETED);
+
+        long storageUsed = active.stream().mapToLong(FileMetadata::getFileSize).sum();
+        long trashSize = trash.stream().mapToLong(FileMetadata::getFileSize).sum();
+
+        List<StorageOverviewResponse.LargestFileInfo> largestFiles = active.stream()
+                .sorted(Comparator.comparing(FileMetadata::getFileSize).reversed())
+                .limit(5)
+                .map(file -> StorageOverviewResponse.LargestFileInfo.builder()
+                        .id(file.getId())
+                        .originalFileName(file.getOriginalFileName())
+                        .fileSize(file.getFileSize())
+                        // Category key (image/video/pdf/…) so the frontend can pick
+                        // the right icon without re-mapping the raw MIME type.
+                        .fileType(categorize(file.getContentType()))
+                        .folderId(file.getFolderId())
+                        .uploadedAt(file.getUploadedAt() != null ? file.getUploadedAt().toString() : null)
+                        .build())
+                .collect(Collectors.toList());
+
+        List<StorageOverviewResponse.FileTypeStat> fileTypeStats = buildFileTypeStats(active);
+
+        return StorageOverviewResponse.builder()
+                .storageUsed(storageUsed)
+                .fileCount(active.size())
+                .folderCount(fetchFolderCount(ownerId))
+                .trashFileCount(trash.size())
+                .trashSize(trashSize)
+                .largestFiles(largestFiles)
+                .fileTypeStats(fileTypeStats)
+                .weeklyUsage(buildTimeline(active, 7, true))
+                .monthlyUsage(buildTimeline(active, 6, false))
+                .build();
+    }
+
+    /**
+     * Groups active files by file-type category (mirrors the frontend buckets).
+     */
+    private List<StorageOverviewResponse.FileTypeStat> buildFileTypeStats(List<FileMetadata> files) {
+        Map<String, long[]> byCategory = new LinkedHashMap<>();
+        for (FileMetadata file : files) {
+            String category = categorize(file.getContentType());
+            long[] totals = byCategory.computeIfAbsent(category, k -> new long[2]);
+            totals[0] += file.getFileSize();
+            totals[1] += 1;
+        }
+        return byCategory.entrySet().stream()
+                .map(entry -> StorageOverviewResponse.FileTypeStat.builder()
+                        .category(entry.getKey())
+                        .bytes(entry.getValue()[0])
+                        .count(entry.getValue()[1])
+                        .build())
+                .collect(Collectors.toList());
+    }
+
+    /**
+     * Builds a usage timeline (daily buckets for a week, monthly buckets for
+     * half a year) from the upload timestamps of active files.
+     */
+    private List<StorageOverviewResponse.UsagePoint> buildTimeline(
+            List<FileMetadata> files, int buckets, boolean daily) {
+        LocalDate today = LocalDate.now();
+        List<StorageOverviewResponse.UsagePoint> points = new ArrayList<>(buckets);
+        for (int offset = buckets - 1; offset >= 0; offset--) {
+            LocalDate bucketStart = daily ? today.minusDays(offset) : today.minusMonths(offset);
+            LocalDate bucketEnd = bucketStart.plusDays(1);
+            String label = daily
+                    ? bucketStart.getDayOfWeek().getDisplayName(TextStyle.SHORT, Locale.ENGLISH)
+                    : bucketStart.getMonth().getDisplayName(TextStyle.SHORT, Locale.ENGLISH);
+            long bytes = 0L;
+            for (FileMetadata file : files) {
+                LocalDateTime uploaded = file.getUploadedAt();
+                if (uploaded == null) {
+                    continue;
+                }
+                LocalDate date = uploaded.toLocalDate();
+                boolean inBucket = daily
+                        ? (!date.isBefore(bucketStart) && date.isBefore(bucketEnd))
+                        : (date.getYear() == bucketStart.getYear()
+                            && date.getMonth() == bucketStart.getMonth());
+                if (inBucket) {
+                    bytes += file.getFileSize();
+                }
+            }
+            points.add(StorageOverviewResponse.UsagePoint.builder()
+                    .label(label)
+                    .bytes(bytes)
+                    .build());
+        }
+        return points;
+    }
+
+    /**
+     * Maps a MIME content type to a display category used by the analytics UI.
+     */
+    private String categorize(String contentType) {
+        if (contentType == null) {
+            return "other";
+        }
+        String type = contentType.toLowerCase(Locale.ROOT);
+        if (type.startsWith("image/")) {
+            return "image";
+        }
+        if (type.startsWith("video/")) {
+            return "video";
+        }
+        if (type.startsWith("audio/")) {
+            return "audio";
+        }
+        if (type.equals("application/pdf")) {
+            return "pdf";
+        }
+        if (type.startsWith("application/zip")
+                || type.contains("gzip") || type.contains("tar")
+                || type.contains("rar") || type.contains("7z")
+                || type.contains("compress")) {
+            return "archive";
+        }
+        if (type.contains("json") || type.contains("xml")
+                || type.contains("javascript") || type.contains("yaml")
+                || type.contains("graphql") || type.contains("typescript")) {
+            return "code";
+        }
+        if (type.startsWith("text/")) {
+            return "document";
+        }
+        return "other";
+    }
+
+    /**
+     * Delegates the folder count to the Folder Service (best effort — the
+     * analytics endpoint must never fail because the folder count is missing).
+     */
+    private long fetchFolderCount(Long ownerId) {
+        try {
+            StandardResponse<List<FolderResponse>> response =
+                    folderServiceClient.getAllFolders(ownerId);
+            if (response == null || response.getData() == null) {
+                return 0L;
+            }
+            return response.getData().size();
+        } catch (Exception e) {
+            log.debug("Could not resolve folder count for ownerId={}: {}", ownerId, e.getMessage());
+            return 0L;
+        }
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Private helpers
     // ─────────────────────────────────────────────────────────────────────────
 
@@ -456,6 +780,46 @@ public class FileServiceImpl implements FileService {
             throw new FileTooLargeException(
                     "File size exceeds the maximum allowed size of "
                             + minioProperties.getMaxFileSize() + " bytes");
+        }
+    }
+
+    /**
+     * Enforces the user's storage quota before the binary is uploaded.
+     * <p>
+     * The quota comes from the Billing Service (the user's subscription).
+     * If the Billing Service is unreachable the check fails open so existing
+     * upload behaviour is never broken by billing being temporarily down.
+     *
+     * @param ownerId  the authenticated user's ID
+     * @param newBytes the size of the incoming upload in bytes
+     */
+    private void enforceQuota(Long ownerId, long newBytes) {
+        try {
+            StandardResponse<QuotaResponse> response = billingServiceClient.getQuota(ownerId);
+            if (response == null || response.getData() == null
+                    || response.getData().getQuotaBytes() == null) {
+                log.debug("Quota unavailable for ownerId={} — skipping enforcement", ownerId);
+                return;
+            }
+
+            long quotaBytes = response.getData().getQuotaBytes();
+            long used = fileMetadataRepository.findByOwnerId(ownerId).stream()
+                    .filter(f -> f.getStatus() == FileStatus.ACTIVE)
+                    .mapToLong(FileMetadata::getFileSize)
+                    .sum();
+
+            if (used + newBytes > quotaBytes) {
+                log.warn("Quota exceeded: ownerId={}, used={}, incoming={}, quota={}",
+                        ownerId, used, newBytes, quotaBytes);
+                throw new QuotaExceededException(
+                        "Storage limit reached. Upgrade your plan to continue.");
+            }
+        } catch (QuotaExceededException e) {
+            throw e;
+        } catch (Exception e) {
+            // Fail open: billing unavailability must never block uploads.
+            log.debug("Quota check skipped for ownerId={} (billing unavailable): {}",
+                    ownerId, e.getMessage());
         }
     }
 
@@ -510,11 +874,19 @@ public class FileServiceImpl implements FileService {
     /**
      * Returns whether the given MIME type supports in-browser preview.
      */
-    private boolean isPreviewable(String contentType) {
-        if (contentType == null) {
-            return false;
+    private boolean isPreviewable(String contentType, String originalFileName) {
+        String type = contentType == null ? "" : contentType.toLowerCase(Locale.ROOT);
+        if (PREVIEWABLE_CONTENT_TYPES.contains(type)) {
+            return true;
         }
-        return PREVIEWABLE_CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT));
+        // Generic uploads (absent or octet-stream MIME) fall back to the file
+        // name extension so images/PDFs/media without a stored content type
+        // still preview.
+        if (type.isBlank() || DEFAULT_CONTENT_TYPE.equals(type)) {
+            String name = originalFileName == null ? "" : originalFileName.toLowerCase(Locale.ROOT);
+            return PREVIEWABLE_EXTENSIONS.stream().anyMatch(name::endsWith);
+        }
+        return false;
     }
 
     /**

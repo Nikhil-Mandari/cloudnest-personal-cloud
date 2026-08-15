@@ -91,6 +91,25 @@ public class GlobalExceptionHandler {
     }
 
     /**
+     * Handles missing / incorrect share-link passwords (401).
+     */
+    @ExceptionHandler(SharePasswordException.class)
+    public ResponseEntity<ErrorResponse> handleSharePassword(
+            SharePasswordException ex, HttpServletRequest request) {
+
+        ErrorResponse response = ErrorResponse.builder()
+                .success(false)
+                .message(ex.getMessage())
+                .status(HttpStatus.UNAUTHORIZED.value())
+                .error(HttpStatus.UNAUTHORIZED.getReasonPhrase())
+                .path(request.getRequestURI())
+                .timestamp(Instant.now())
+                .build();
+
+        return ResponseEntity.status(HttpStatus.UNAUTHORIZED).body(response);
+    }
+
+    /**
      * Handles unauthorized share access (403).
      */
     @ExceptionHandler(UnauthorizedShareAccessException.class)

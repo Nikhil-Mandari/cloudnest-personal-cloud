@@ -210,6 +210,35 @@ docker volume rm cloudnest-mysql-data   # only when you really want to wipe data
 
 ---
 
+## 💻 System Requirements (Local Dev)
+
+The full Compose stack runs **11 containers**: MySQL, MinIO, Eureka Server, Config
+Server, the six business services (auth, user, file, folder, share, notification)
+and the API Gateway — **9 Java/Spring Boot JVMs** plus infrastructure, all inside
+the Docker Desktop WSL VM.
+
+- **Recommended: 16 GB RAM or more** for comfortable full-stack local development.
+- **8 GB:** suitable for **partial / staggered** development and testing only
+  (start infra first, then one or two services — see "Local Development" below).
+
+### Observed behaviour on an ~8 GB machine
+
+- With the complete stack running, Docker Desktop/WSL hit memory pressure and the
+  Docker engine became unstable: containers eventually became unavailable and
+  `docker` CLI calls hung.
+- The instability was caused by the Docker VM and multiple Spring Boot JVMs
+  competing for memory (each JVM uses roughly 300–700 MB during startup).
+- Stopping the stack (`docker compose stop`) restored memory and Docker
+  responsiveness — no data loss.
+- MySQL and MinIO data lives in **named volumes**, so it persists across
+  stop/restart (`docker compose down` keeps volumes; only `down -v` deletes them).
+
+> 8 GB can still run the stack in parts, and 16 GB is a recommendation, not a
+> guarantee of performance. If the engine becomes unresponsive, stop the stack and
+> restart Docker Desktop before continuing.
+
+---
+
 ## 🩺 Troubleshooting
 
 | Symptom | Cause / Fix |

@@ -1,8 +1,8 @@
 import { useForm } from 'react-hook-form';
 import { Link, useLocation } from 'react-router-dom';
-import { Mail } from 'lucide-react';
-import { toast } from 'react-toastify';
+import { KeyRound, Mail } from 'lucide-react';
 
+import { SocialLoginButtons } from '@/components/auth/SocialLoginButtons';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
@@ -70,21 +70,27 @@ export function LoginPage() {
               className="text-brand-600 focus:ring-brand-500 h-4 w-4 rounded border-gray-300 dark:border-gray-600 dark:bg-gray-900"
               {...register('rememberMe')}
             />
-            Remember me
+            <span>Remember this device</span>
           </label>
-          <button
-            type="button"
-            onClick={() => toast.info('Password reset is not wired up yet.')}
+          <Link
+            to={APP_ROUTES.forgotPassword}
             className="text-brand-600 hover:text-brand-700 dark:text-brand-400 text-sm font-medium transition-colors hover:underline"
           >
             Forgot password?
-          </button>
+          </Link>
         </div>
+
+        <p className="flex items-center gap-1.5 text-xs text-gray-400 dark:text-gray-500">
+          <KeyRound className="h-3.5 w-3.5" />
+          For extra security, we email a one-time code for every new sign-in.
+        </p>
 
         <Button type="submit" size="lg" fullWidth isLoading={loginMutation.isPending}>
           Sign in
         </Button>
       </form>
+
+      <SocialLoginButtons />
 
       <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
         Don&apos;t have an account?{' '}

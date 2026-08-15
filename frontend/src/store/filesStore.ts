@@ -17,12 +17,15 @@ interface FilesState {
   filter: FileTypeFilter;
   searchQuery: string;
   selectedIds: number[];
+  /** Right-hand details panel visibility (Drive style). */
+  detailsOpen: boolean;
 
   setViewMode: (mode: FileViewMode) => void;
   setSortKey: (key: SortKey) => void;
   setSortDirection: (direction: SortDirection) => void;
   setFilter: (filter: FileTypeFilter) => void;
   setSearchQuery: (query: string) => void;
+  setDetailsOpen: (open: boolean) => void;
   toggleSelect: (id: number) => void;
   selectOnly: (ids: number[]) => void;
   clearSelection: () => void;
@@ -37,12 +40,14 @@ export const useFilesStore = create<FilesState>()(
       filter: 'all',
       searchQuery: '',
       selectedIds: [],
+      detailsOpen: false,
 
       setViewMode: (viewMode) => set({ viewMode }),
       setSortKey: (sortKey) => set({ sortKey }),
       setSortDirection: (sortDirection) => set({ sortDirection }),
       setFilter: (filter) => set({ filter }),
       setSearchQuery: (searchQuery) => set({ searchQuery }),
+      setDetailsOpen: (detailsOpen) => set({ detailsOpen }),
       toggleSelect: (id) =>
         set((state) => ({
           selectedIds: state.selectedIds.includes(id)
@@ -59,6 +64,7 @@ export const useFilesStore = create<FilesState>()(
         sortKey: state.sortKey,
         sortDirection: state.sortDirection,
         filter: state.filter,
+        detailsOpen: state.detailsOpen,
       }),
     },
   ),

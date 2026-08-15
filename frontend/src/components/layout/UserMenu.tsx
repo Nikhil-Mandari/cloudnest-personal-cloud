@@ -4,10 +4,10 @@ import { AnimatePresence, motion } from 'framer-motion';
 import { ChevronDown, LogOut, Settings, User } from 'lucide-react';
 import { toast } from 'react-toastify';
 
+import { Avatar } from '@/components/common/Avatar';
 import { APP_ROUTES } from '@/constants/routes';
 import { useClickOutside } from '@/hooks/useClickOutside';
 import { useAuth } from '@/hooks/useAuth';
-import { getInitials } from '@/utils/format';
 
 export function UserMenu() {
   const { user, logout } = useAuth();
@@ -17,7 +17,7 @@ export function UserMenu() {
 
   useClickOutside(containerRef, () => setOpen(false));
 
-  const displayName = user?.fullName ?? 'Guest';
+  const displayName = user?.displayName ?? user?.username ?? 'Guest';
   const email = user?.email ?? '';
 
   const handleLogout = () => {
@@ -41,9 +41,7 @@ export function UserMenu() {
         aria-expanded={open}
         className="flex items-center gap-2.5 rounded-lg p-1.5 transition-colors hover:bg-gray-100 dark:hover:bg-gray-800"
       >
-        <span className="from-brand-500 to-accent-600 grid h-8 w-8 place-items-center rounded-full bg-linear-to-br text-xs font-bold text-white">
-          {getInitials(displayName)}
-        </span>
+        <Avatar name={displayName} avatarUrl={user?.avatarUrl} size="sm" />
         <span className="hidden text-left sm:block">
           <span className="block max-w-[10rem] truncate text-sm font-medium text-gray-900 dark:text-white">
             {displayName}

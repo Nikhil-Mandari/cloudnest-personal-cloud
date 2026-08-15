@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Link2 } from 'lucide-react';
+import { Eye, Lock, MousePointerClick, Link2 } from 'lucide-react';
 import { toast } from 'react-toastify';
 
 import { SHARE_EXPIRY_OPTIONS } from '@/constants/files';
@@ -11,6 +11,7 @@ import { useShareFileMutation } from '@/hooks/useShare';
 import type { FileItem, SharePermission, ShareRecord } from '@/types';
 import { copyToClipboard } from '@/utils/download';
 import { buildShareUrl } from '@/utils/file';
+import { toLocalDateTimeIso } from '@/utils/format';
 
 export interface ShareDialogProps {
   file: FileItem | null;
@@ -28,6 +29,7 @@ export function ShareDialog({ file, open, onClose }: ShareDialogProps) {
   const [email, setEmail] = useState('');
   const [permission, setPermission] = useState<SharePermission>('VIEW');
   const [expiryDays, setExpiryDays] = useState<string | null>(null);
+  const [password, setPassword] = useState('');
   const [error, setError] = useState<string | undefined>();
   const [createdShare, setCreatedShare] = useState<ShareRecord | null>(null);
 
@@ -43,6 +45,7 @@ export function ShareDialog({ file, open, onClose }: ShareDialogProps) {
     setEmail('');
     setPermission('VIEW');
     setExpiryDays(null);
+    setPassword('');
     setError(undefined);
     setCreatedShare(null);
   }
@@ -62,7 +65,7 @@ export function ShareDialog({ file, open, onClose }: ShareDialogProps) {
     }
 
     const expiryDate = expiryDays
-      ? new Date(Date.now() + Number(expiryDays) * 86_400_000).toISOString()
+      ? toLocalDateTimeIso(new Date(Date.now() + Number(expiryDays) * 86_400_000))
       : undefined;
 
     try {
@@ -71,6 +74,7 @@ export function ShareDialog({ file, open, onClose }: ShareDialogProps) {
         sharedWithEmail: trimmedEmail,
         permission,
         expiryDate,
+        password: password.trim() || undefined,
       });
       setCreatedShare(data.data);
       toast.success('Share link created');
@@ -108,7 +112,43 @@ export function ShareDialog({ file, open, onClose }: ShareDialogProps) {
             <p className="mt-1 text-xs break-all text-gray-500 dark:text-gray-400">
               {buildShareUrl(createdShare.shareToken)}
             </p>
+            {createdShare.hasPassword && (
+              <p className="mt-2 flex items-center gap-1.5 text-xs font-medium text-amber-700 dark:text-amber-300">
+                <Lock className="h-3.5 w-3.5" /> Password protected — share the password separately
+              </p>
+            )}
           </div>
+
+          <div className="grid grid-cols-3 gap-2">
+            <div className="flex items-center gap-2 rounded-lg bg-gray-50 p-2.5 dark:bg-gray-900">
+              <Eye className="h-4 w-4 shrink-0 text-brand-500" />
+              <div>
+                <p className="text-[10px] tracking-wide text-gray-400 uppercase">Views</p>
+                <p className="text-sm font-semibold text-gray-900 tabular-nums dark:text-white">
+                  {createdShare.viewCount ?? 0}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg bg-gray-50 p-2.5 dark:bg-gray-900">
+              <MousePointerClick className="h-4 w-4 shrink-0 text-brand-500" />
+              <div>
+                <p className="text-[10px] tracking-wide text-gray-400 uppercase">Downloads</p>
+                <p className="text-sm font-semibold text-gray-900 tabular-nums dark:text-white">
+                  {createdShare.downloadCount ?? 0}
+                </p>
+              </div>
+            </div>
+            <div className="flex items-center gap-2 rounded-lg bg-gray-50 p-2.5 dark:bg-gray-900">
+              <Lock className="h-4 w-4 shrink-0 text-brand-500" />
+              <div>
+                <p className="text-[10px] tracking-wide text-gray-400 uppercase">Password</p>
+                <p className="text-sm font-semibold text-gray-900 dark:text-white">
+                  {createdShare.hasPassword ? 'On' : 'Off'}
+                </p>
+              </div>
+            </div>
+          </div>
+
           <div className="flex justify-end gap-3">
             <Button variant="outline" onClick={onClose}>
               Done
@@ -146,6 +186,7 @@ export function ShareDialog({ file, open, onClose }: ShareDialogProps) {
                 className={selectClasses}
               >
                 <option value="VIEW">Can view</option>
+                <option value="DOWNLOAD">Download only</option>
                 <option value="EDIT">Can edit</option>
               </select>
             </label>
@@ -165,6 +206,15 @@ export function ShareDialog({ file, open, onClose }: ShareDialogProps) {
               </select>
             </label>
           </div>
+
+          <Input
+            label="Password (optional)"
+            type="password"
+            value={password}
+            onChange={(event) => setPassword(event.target.value)}
+            placeholder="Protect the link with a password"
+            hint="Recipients must enter this password to open or download the file."
+          />
 
           <div className="flex justify-end gap-3 border-t border-gray-100 pt-4 dark:border-gray-800">
             <Button variant="outline" onClick={onClose} disabled={shareMutation.isPending}>

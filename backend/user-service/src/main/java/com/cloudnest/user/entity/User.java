@@ -30,6 +30,14 @@ import java.time.LocalDateTime;
 @Builder
 public class User {
 
+    /**
+     * Profile primary key.
+     * <p>
+     * Caller-assigned: the Auth Service provisions profiles with the SAME
+     * numeric ID it generated in {@code auth_db.user_credentials} so that
+     * the shared identity contract ({@code X-User-Id}) resolves across
+     * services.
+     */
     @Id
     private Long id;
 

@@ -37,7 +37,7 @@ public class JwtProvider {
     public JwtProvider(
             @Value("${jwt.secret}") String secret,
             @Value("${jwt.expiration-ms}") long expirationMs) {
-        this.signingKey = new SecretKeySpec(decodeSecret(secret), "HmacSHA256");
+        this.signingKey = new SecretKeySpec(decodeSecret(requireStrongSecret(secret)), "HmacSHA256");
         this.expirationMs = expirationMs;
         log.info("JwtProvider initialized with expiration-ms={}", expirationMs);
     }
@@ -52,19 +52,40 @@ public class JwtProvider {
      * @return a signed JWT string
      */
     public String generateToken(Long userId, String username, String email, String role) {
-        Date now = new Date();
-        Date expiry = new Date(now.getTime() + expirationMs);
+        return generateTokenWithExpiry(userId, username, email, role, expirationMs, null);
+    }
 
-        return Jwts.builder()
+    /**
+     * Generates a JWT with a custom expiry and an optional token-type claim
+     * (e.g. {@code PASSWORD_RESET}).
+     *
+     * @param userId     the user's unique identifier
+     * @param username   the user's username
+     * @param email      the user's email address
+     * @param role       the user's role
+     * @param expiryMs   custom lifetime in milliseconds
+     * @param tokenType  optional claim value for {@code type} (may be null)
+     * @return a signed JWT string
+     */
+    public String generateTokenWithExpiry(Long userId, String username, String email, String role,
+                                          long expiryMs, String tokenType) {
+        Date now = new Date();
+        Date expiry = new Date(now.getTime() + expiryMs);
+
+        var builder = Jwts.builder()
                 .subject(userId.toString())
                 .claim("userId", userId)
                 .claim("username", username)
                 .claim("email", email)
                 .claim("role", role)
                 .issuedAt(now)
-                .expiration(expiry)
-                .signWith(signingKey)
-                .compact();
+                .expiration(expiry);
+
+        if (tokenType != null) {
+            builder.claim("type", tokenType);
+        }
+
+        return builder.signWith(signingKey).compact();
     }
 
     /**
@@ -100,16 +121,43 @@ public class JwtProvider {
     // -- Private helpers -----------------------------------------------------
 
     /**
+     * Fails fast at startup when the JWT secret is missing or weaker than
+     * 256 bits. The shared config deliberately ships without a fallback
+     * secret, so a missing {@code JWT_SECRET} must stop the service instead
+     * of silently signing tokens with a known default.
+     */
+    private static String requireStrongSecret(String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "JWT secret is not configured. Set the JWT_SECRET environment variable "
+                            + "(Base64-encoded, at least 32 bytes) before starting the service.");
+        }
+        return secret;
+    }
+
+    /**
      * Decodes the JWT secret: tries Base64 first, then falls back to
-     * SHA-256 key derivation for plain-text values.
+     * SHA-256 key derivation for plain-text values. Secrets that resolve to
+     * fewer than 32 bytes are rejected so a weak key never reaches the signer.
      */
     private static byte[] decodeSecret(String secret) {
         try {
             byte[] decoded = Base64.getDecoder().decode(secret);
+            if (decoded.length < 32) {
+                throw new IllegalStateException(
+                        "JWT secret is too weak: Base64 value decodes to " + decoded.length
+                                + " bytes. Use at least 32 bytes (256 bits).");
+            }
             log.debug("JWT secret decoded from Base64");
             return decoded;
         } catch (IllegalArgumentException e) {
-            log.warn("JWT secret is not valid Base64; falling back to SHA-256 key derivation");
+            if (secret.length() < 32) {
+                throw new IllegalStateException(
+                        "JWT secret is too weak: expected a Base64 value of at least 32 bytes, "
+                                + "or a plain-text secret of at least 32 characters.");
+            }
+            log.warn("JWT secret is not valid Base64; deriving a 256-bit key via SHA-256 "
+                    + "(set a Base64 JWT_SECRET for production)");
             return sha256(secret);
         }
     }

@@ -43,7 +43,7 @@ The project will be developed in small milestones, where each completed module i
 | 📄 File Management | ⏳ Pending |
 | 🔗 Share Module | ⏳ Pending |
 | 📧 Notification Module | ⏳ Pending |
-| 🎨 Frontend Development | ⏳ Pending |
+| 🎨 Frontend Development | ✅ Completed (UI implemented) |
 | 🐳 Docker & Deployment | ⏳ Pending |
 | 🚀 Final Testing | ⏳ Pending |
 
@@ -166,7 +166,7 @@ The project will be developed in small milestones, where each completed module i
 - Profile Page
 - Storage Usage
 
-**Status:** ⏳ Pending
+**Status:** ✅ Completed (frontend UI implemented end-to-end)
 
 ---
 
@@ -349,7 +349,7 @@ The project will be developed in small milestones, where each completed module i
 | File Service | ⏳ 0% |
 | Share Service | ⏳ 0% |
 | Notification Service | ⏳ 0% |
-| Frontend | ⏳ 0% |
+| Frontend | ✅ 100% (UI) |
 | Deployment | ⏳ 0% |
 
 ---

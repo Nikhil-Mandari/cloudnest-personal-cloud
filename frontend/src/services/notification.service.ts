@@ -7,6 +7,17 @@ export const notificationService = {
   getNotifications: () =>
     apiClient.get<ApiResponse<AppNotification[]>>(API_ENDPOINTS.notifications.list),
 
-  markAsRead: (id: string) =>
+  getUnreadCount: () =>
+    apiClient.get<ApiResponse<{ count: number }>>(API_ENDPOINTS.notifications.unreadCount),
+
+  markAsRead: (id: number) =>
     apiClient.put<ApiResponse<AppNotification>>(API_ENDPOINTS.notifications.markAsRead(id)),
+
+  markAllAsRead: () =>
+    apiClient.put<ApiResponse<null>>(API_ENDPOINTS.notifications.markAllAsRead),
+
+  deleteNotification: (id: number) =>
+    apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.notifications.remove(id)),
+
+  clearRead: () => apiClient.delete<ApiResponse<null>>(API_ENDPOINTS.notifications.clearRead),
 };

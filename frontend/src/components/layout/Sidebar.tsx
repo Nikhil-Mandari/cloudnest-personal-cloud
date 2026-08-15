@@ -2,13 +2,18 @@ import { NavLink } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import {
   Bell,
+  BarChart3,
+  CircleHelp,
+  CreditCard,
   Files,
   FolderOpen,
   LayoutDashboard,
+  Link2,
   PanelLeftClose,
   PanelLeftOpen,
   Settings,
   Share2,
+  ShieldCheck,
   Trash2,
   User,
   X,
@@ -17,8 +22,10 @@ import {
 
 import { Brand } from '@/components/common/Brand';
 import { APP_ROUTES } from '@/constants/routes';
+import { useAuthStore } from '@/store/authStore';
 import { useUiStore } from '@/store/uiStore';
 import { cn } from '@/utils/cn';
+import { isAdminRole } from '@/utils/role';
 
 interface NavItem {
   label: string;
@@ -31,13 +38,25 @@ const MAIN_NAV: readonly NavItem[] = [
   { label: 'My Files', to: APP_ROUTES.files, icon: Files },
   { label: 'Folders', to: APP_ROUTES.folders, icon: FolderOpen },
   { label: 'Shared', to: APP_ROUTES.shared, icon: Share2 },
+  { label: 'My Shares', to: APP_ROUTES.myShares, icon: Link2 },
   { label: 'Trash', to: APP_ROUTES.trash, icon: Trash2 },
+];
+
+const INSIGHTS_NAV: readonly NavItem[] = [
+  { label: 'Analytics', to: APP_ROUTES.analytics, icon: BarChart3 },
+  { label: 'Storage Plans', to: APP_ROUTES.plans, icon: CreditCard },
 ];
 
 const ACCOUNT_NAV: readonly NavItem[] = [
   { label: 'Notifications', to: APP_ROUTES.notifications, icon: Bell },
+  { label: 'Security', to: APP_ROUTES.security, icon: ShieldCheck },
   { label: 'Profile', to: APP_ROUTES.profile, icon: User },
   { label: 'Settings', to: APP_ROUTES.settings, icon: Settings },
+  { label: 'About', to: APP_ROUTES.about, icon: CircleHelp },
+];
+
+const ADMIN_NAV: readonly NavItem[] = [
+  { label: 'Admin', to: APP_ROUTES.admin, icon: ShieldCheck },
 ];
 
 interface NavSectionProps {
@@ -86,6 +105,9 @@ interface SidebarContentProps {
 }
 
 function SidebarContent({ collapsed = false }: SidebarContentProps) {
+  const role = useAuthStore((state) => state.user?.role);
+  const isAdmin = isAdminRole(role);
+
   return (
     <div className="flex h-full flex-col">
       <div
@@ -99,7 +121,11 @@ function SidebarContent({ collapsed = false }: SidebarContentProps) {
 
       <nav className="flex-1 space-y-6 overflow-y-auto px-3 py-5">
         <NavSection items={MAIN_NAV} collapsed={collapsed} />
+        <NavSection label="Insights" items={INSIGHTS_NAV} collapsed={collapsed} />
         <NavSection label="Account" items={ACCOUNT_NAV} collapsed={collapsed} />
+        {isAdmin && (
+          <NavSection label="Administration" items={ADMIN_NAV} collapsed={collapsed} />
+        )}
       </nav>
     </div>
   );

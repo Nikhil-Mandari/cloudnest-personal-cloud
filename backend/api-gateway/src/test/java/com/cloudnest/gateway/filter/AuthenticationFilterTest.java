@@ -285,6 +285,7 @@ class AuthenticationFilterTest {
         // -- Arrange: JWT validation succeeds --
         when(jwtUtil.validateToken("valid-token")).thenReturn(Optional.of(claims));
         when(jwtUtil.getUserId(claims)).thenReturn(Optional.of(1L));
+        when(jwtUtil.getUsername(claims)).thenReturn(Optional.of("alice"));
         when(jwtUtil.getEmail(claims)).thenReturn(Optional.of("user@cloudnest.com"));
         when(jwtUtil.getRole(claims)).thenReturn(Optional.of("USER"));
 
@@ -292,6 +293,7 @@ class AuthenticationFilterTest {
         ServerHttpRequest.Builder requestBuilder = mock(ServerHttpRequest.Builder.class);
         when(request.mutate()).thenReturn(requestBuilder);
         when(requestBuilder.header("X-User-Id", "1")).thenReturn(requestBuilder);
+        when(requestBuilder.header("X-User-Username", "alice")).thenReturn(requestBuilder);
         when(requestBuilder.header("X-User-Email", "user@cloudnest.com")).thenReturn(requestBuilder);
         when(requestBuilder.header("X-User-Role", "USER")).thenReturn(requestBuilder);
 

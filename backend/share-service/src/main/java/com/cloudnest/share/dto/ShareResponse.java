@@ -28,11 +28,15 @@ public class ShareResponse {
     private Long id;
     private String resourceId;
     private ResourceType resourceType;
+    /** Display name of the shared resource (file name / folder name). */
+    private String resourceName;
     private Long ownerId;
     private Long sharedWithUserId;
     private Permission permission;
     private String shareToken;
     private Boolean isPublic;
+    /** Whether the share link is protected by a password (the hash itself is never exposed). */
+    private Boolean hasPassword;
     private LocalDateTime expiryDate;
     private LocalDateTime createdAt;
 }

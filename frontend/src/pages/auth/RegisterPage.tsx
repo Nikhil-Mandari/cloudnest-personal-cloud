@@ -2,6 +2,7 @@ import { useForm } from 'react-hook-form';
 import { Link } from 'react-router-dom';
 import { Mail, User } from 'lucide-react';
 
+import { SocialLoginButtons } from '@/components/auth/SocialLoginButtons';
 import { Button } from '@/components/ui/Button';
 import { Input } from '@/components/ui/Input';
 import { PasswordInput } from '@/components/ui/PasswordInput';
@@ -16,6 +17,13 @@ import {
 import { useAuthMutations } from '@/hooks/useAuthMutations';
 import type { RegisterFormValues } from '@/types';
 
+const registerDefaultValues: RegisterFormValues = {
+  fullName: '',
+  email: '',
+  password: '',
+  confirmPassword: '',
+};
+
 export function RegisterPage() {
   const { registerMutation } = useAuthMutations();
 
@@ -25,7 +33,7 @@ export function RegisterPage() {
     getValues,
     formState: { errors },
   } = useForm<RegisterFormValues>({
-    defaultValues: { fullName: '', email: '', password: '', confirmPassword: '' },
+    defaultValues: registerDefaultValues,
   });
 
   const onSubmit = (values: RegisterFormValues) => {
@@ -104,6 +112,8 @@ export function RegisterPage() {
           Create account
         </Button>
       </form>
+
+      <SocialLoginButtons />
 
       <p className="mt-6 text-center text-sm text-gray-500 dark:text-gray-400">
         Already have an account?{' '}

@@ -1,6 +1,6 @@
 package com.cloudnest.user.controller;
 
-import com.cloudnest.user.dto.CreateUserRequest;
+import com.cloudnest.user.dto.CreateProfileRequest;
 import com.cloudnest.user.dto.UpdateProfileRequest;
 import com.cloudnest.user.dto.UserProfileResponse;
 import com.cloudnest.user.service.UserService;
@@ -42,53 +42,64 @@ public class UserController {
     }
 
     /**
-     * Creates a new user profile.
+     * Retrieves the profile of the currently authenticated user.
      * <p>
-     * This endpoint is called by the Auth Service after successful registration
-     * to create the corresponding profile record.
+     * Identity is supplied by the API Gateway via forwarded headers. When the
+     * profile is missing it is lazily created (self-healing) from those
+     * headers — existing profiles are returned unchanged.
      *
-     * @param request    the user creation payload
-     * @param httpRequest the current HTTP request (for building response path)
-     * @return 201 Created with the newly created user profile
+     * @param userIdHeader the authenticated user's ID (set by API Gateway from JWT)
+     * @param usernameHeader the username forwarded by the gateway (may be absent on direct calls)
+     * @param emailHeader    the email forwarded by the gateway (may be absent on direct calls)
+     * @param roleHeader     the role forwarded by the gateway (may be absent on direct calls)
+     * @return 200 OK with the current user's profile
      */
-    @PostMapping
-    public ResponseEntity<StandardResponse<UserProfileResponse>> createUser(
-            @Valid @RequestBody CreateUserRequest request,
+    @GetMapping("/me")
+    public ResponseEntity<StandardResponse<UserProfileResponse>> getCurrentUser(
+            @RequestHeader("X-User-Id") Long userIdHeader,
+            @RequestHeader(value = "X-User-Username", required = false) String usernameHeader,
+            @RequestHeader(value = "X-User-Email", required = false) String emailHeader,
+            @RequestHeader(value = "X-User-Role", required = false) String roleHeader,
             HttpServletRequest httpRequest) {
 
-        log.info("POST /api/users - username={}, email={}",
-                request.getUsername(), request.getEmail());
+        log.info("GET /api/users/me - userId={}", userIdHeader);
 
-        UserProfileResponse profile = userService.createUser(request);
+        UserProfileResponse profile =
+                userService.getOrCreateCurrentUser(userIdHeader, usernameHeader, emailHeader, roleHeader);
 
-        return ResponseEntity.status(HttpStatus.CREATED)
-                .body(StandardResponse.<UserProfileResponse>builder()
+        return ResponseEntity.ok(
+                StandardResponse.<UserProfileResponse>builder()
                         .success(true)
-                        .message("User profile created successfully")
+                        .message("Current user profile retrieved successfully")
                         .data(profile)
                         .path(httpRequest.getRequestURI())
                         .build());
     }
 
     /**
-     * Retrieves the profile of the currently authenticated user.
+     * Provisions a user profile (internal endpoint called by the Auth Service).
+     * <p>
+     * Idempotent: calling this with an existing user ID returns the existing
+     * profile instead of creating a duplicate. The endpoint is not whitelisted
+     * in the API Gateway, so it is not reachable externally without a valid JWT.
      *
-     * @param userIdHeader the authenticated user's ID (set by API Gateway from JWT)
-     * @return 200 OK with the current user's profile
+     * @param request the profile data (auth user ID, username, email, role)
+     * @return 200 OK with the provisioned (or existing) profile
      */
-    @GetMapping("/me")
-    public ResponseEntity<StandardResponse<UserProfileResponse>> getCurrentUser(
-            @RequestHeader("X-User-Id") Long userIdHeader,
+    @PostMapping
+    public ResponseEntity<StandardResponse<UserProfileResponse>> createProfile(
+            @Valid @RequestBody CreateProfileRequest request,
             HttpServletRequest httpRequest) {
 
-        log.info("GET /api/users/me - userId={}", userIdHeader);
+        log.info("POST /api/users - provisioning profile: userId={}, username={}",
+                request.getId(), request.getUsername());
 
-        UserProfileResponse profile = userService.getCurrentUser(userIdHeader);
+        UserProfileResponse profile = userService.createProfile(request);
 
         return ResponseEntity.ok(
                 StandardResponse.<UserProfileResponse>builder()
                         .success(true)
-                        .message("Current user profile retrieved successfully")
+                        .message("User profile provisioned successfully")
                         .data(profile)
                         .path(httpRequest.getRequestURI())
                         .build());

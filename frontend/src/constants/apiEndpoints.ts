@@ -5,18 +5,44 @@
 export const API_ENDPOINTS = {
   auth: {
     login: '/auth/login',
+    verifyLogin: '/auth/login/verify',
     register: '/auth/register',
-    me: '/auth/me',
+    verifyRegistration: '/auth/register/verify',
+    resendOtp: '/auth/otp/resend',
+    forgotPassword: '/auth/forgot-password',
+    verifyForgotPassword: '/auth/forgot-password/verify',
+    resetPassword: '/auth/forgot-password/reset',
+    refresh: '/auth/refresh',
+    logout: '/auth/logout',
+    logoutAll: '/auth/logout-all',
+    // ── Social login (Google / GitHub OAuth) ──────────────────────────────
+    oauth: {
+      status: (provider: 'google' | 'github') => `/auth/oauth/${provider}/status`,
+      authorize: (provider: 'google' | 'github') => `/auth/oauth/${provider}/authorize`,
+    },
+    changePassword: '/auth/change-password',
+    sessions: '/auth/sessions',
+    session: (sessionId: string) => `/auth/sessions/${sessionId}`,
+    loginHistory: '/auth/login-history',
+    securityLogs: '/auth/security-logs',
+    securityOverview: '/auth/security-overview',
+    /** Completes a sign-in blocked on the backend 2FA step (TOTP / backup code). */
+    verifyTwoFactorLogin: '/auth/login/2fa',
   },
   users: {
-    profile: '/users/profile',
-    changePassword: '/users/change-password',
+    profile: '/users/me',
   },
   folders: {
     list: '/folders',
     create: '/folders',
+    root: '/folders/root',
+    detail: (id: string) => `/folders/${id}`,
+    children: (id: string) => `/folders/${id}/children`,
     rename: (id: string) => `/folders/${id}`,
     remove: (id: string) => `/folders/${id}`,
+    trash: '/folders/trash',
+    restore: (id: string) => `/folders/${id}/restore`,
+    permanentRemove: (id: string) => `/folders/${id}/permanent`,
   },
   files: {
     list: '/files',
@@ -31,16 +57,64 @@ export const API_ENDPOINTS = {
     favorite: (id: number) => `/files/${id}/favorite`,
     remove: (id: number) => `/files/${id}`,
     restore: (id: number) => `/files/${id}/restore`,
+    trash: '/files/trash',
+    permanentRemove: (id: number) => `/files/${id}/permanent`,
+    // ── Phase 2: version history ───────────────────────────────────────────
+    versions: (id: number) => `/files/${id}/versions`,
+    version: (id: number, versionId: number) => `/files/${id}/versions/${versionId}`,
+    restoreVersion: (id: number, versionId: number) =>
+      `/files/${id}/versions/${versionId}/restore`,
+    downloadVersion: (id: number, versionId: number) =>
+      `/files/${id}/versions/${versionId}/download`,
+    // ── Phase 2: bulk download, analytics, audit, scan ─────────────────────
+    downloadZip: '/files/download-zip',
+    analytics: '/files/stats/overview',
+    auditLogs: '/files/audit-logs',
+    scanStatus: (id: number) => `/files/${id}/scan-status`,
   },
   share: {
     myShares: '/shares/my-shares',
     sharedWithMe: '/shares/shared-with-me',
     create: (fileId: number) => `/shares/file/${fileId}`,
     remove: (id: number) => `/shares/${id}`,
+    update: (id: number) => `/shares/${id}`,
+    analytics: (id: number) => `/shares/${id}/analytics`,
     public: (token: string) => `/shares/public/${token}`,
+    verifyPassword: (token: string) => `/shares/public/${token}/verify-password`,
+    download: (token: string) => `/shares/public/${token}/download`,
+    preview: (token: string) => `/shares/public/${token}/preview`,
   },
   notifications: {
     list: '/notifications',
-    markAsRead: (id: string) => `/notifications/${id}`,
+    unreadCount: '/notifications/unread-count',
+    markAsRead: (id: number) => `/notifications/${id}/read`,
+    markAllAsRead: '/notifications/read-all',
+    remove: (id: number) => `/notifications/${id}`,
+    // ── Phase 5: clear read notifications ─────────────────────────────────
+    clearRead: '/notifications/read-all',
+  },
+  // ── Phase 7: billing (plans, subscriptions, payments) ────────────────────
+  billing: {
+    plans: '/billing/plans',
+    subscription: '/billing/subscription',
+    quota: '/billing/quota',
+    orders: '/billing/orders',
+    createOrder: '/billing/orders',
+    verifyOrder: '/billing/orders/verify',
+    cancelOrder: (orderUuid: string) => `/billing/orders/${orderUuid}/cancel`,
+  },
+  // ── Phase 4: admin dashboard ─────────────────────────────────────────────
+  admin: {
+    systemHealth: '/admin/system/health',
+    userSummary: '/users/admin/summary',
+    users: '/users/admin',
+    storageOverview: '/files/admin/storage-overview',
+    auditLogs: '/files/admin/audit-logs',
+    minioStatus: '/files/admin/minio-status',
+    securityOverview: '/auth/admin/security-overview',
+    loginHistory: '/auth/admin/login-history',
+    securityLogs: '/auth/admin/security-logs',
+    setUserEnabled: (id: number) => `/auth/admin/users/${id}/enabled`,
+    setUserRole: (id: number) => `/auth/admin/users/${id}/role`,
   },
 } as const;

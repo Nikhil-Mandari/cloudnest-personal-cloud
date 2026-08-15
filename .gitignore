@@ -8,6 +8,7 @@ Thumbs.db
 # Environment
 .env
 .env.*
+!.env.example
 
 # VS Code
 .vscode/
@@ -28,3 +29,5 @@ target/
 
 # Maven Wrapper
 .mvn/wrapper/maven-wrapper.jar
+# E2E harness (local)
+.e2e/

@@ -9,16 +9,16 @@ export interface DeleteDialogProps {
   isLoading?: boolean;
 }
 
-/** Confirmation dialog shown before permanently deleting a file. */
+/** Confirmation dialog shown before moving a file to the trash. */
 export function DeleteDialog({ file, open, onClose, onConfirm, isLoading }: DeleteDialogProps) {
   return (
     <ConfirmationDialog
       open={open}
       onClose={onClose}
       onConfirm={() => file && onConfirm(file)}
-      title={file ? `Delete “${file.originalFileName}”?` : 'Delete file?'}
-      description="This permanently removes the file and its content from storage. This action cannot be undone."
-      confirmLabel="Delete"
+      title={file ? `Move “${file.originalFileName}” to trash?` : 'Move file to trash?'}
+      description="The file stays in your trash, where you can restore it or delete it permanently."
+      confirmLabel="Move to trash"
       variant="danger"
       isLoading={isLoading}
     />

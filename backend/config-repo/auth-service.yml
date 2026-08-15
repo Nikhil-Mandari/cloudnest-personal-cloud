@@ -11,6 +11,70 @@ spring:
     password: ${AUTH_DB_PASSWORD:root}
     driver-class-name: com.mysql.cj.jdbc.Driver
 
+  mail:
+    # SMTP is optional. When not configured (empty host), the auth service
+    # runs in development mode and returns the OTP as `devOtp` in responses.
+    host: ${MAIL_HOST:}
+    port: ${MAIL_PORT:587}
+    username: ${MAIL_USERNAME:}
+    password: ${MAIL_PASSWORD:}
+    properties:
+      mail:
+        smtp:
+          auth: ${MAIL_SMTP_AUTH:true}
+          starttls:
+            enable: ${MAIL_SMTP_STARTTLS:true}
+          # Bound SMTP operations (ms) so a stalled/unreachable SMTP server
+          # fails fast instead of hanging request threads and the mail health
+          # probe indefinitely. Also keeps the aggregate health bounded.
+          connectiontimeout: ${MAIL_SMTP_CONNECT_TIMEOUT:5000}
+          timeout: ${MAIL_SMTP_TIMEOUT:5000}
+          writetimeout: ${MAIL_SMTP_WRITE_TIMEOUT:5000}
+
+# ── Transactional email (OTP delivery) ─────────────────────────
+app:
+  mail:
+    from: ${MAIL_FROM:noreply@cloudnest.app}
+    # `false` (default) = development mode: OTPs are returned as devOtp.
+    enabled: ${MAIL_ENABLED:false}
+
+# ── WebAuthn (passkeys) ─────────────────────────────────────
+webauthn:
+  # Effective domain the browser sees (must match the origin host of the app).
+  rp-id: ${WEBAUTHN_RP_ID:localhost}
+  rp-name: ${WEBAUTHN_RP_NAME:CloudNest}
+  # Both development Vite origins are allowed so passkeys work regardless of
+  # which dev server the developer is running.
+  origins: ${WEBAUTHN_ORIGINS:http://localhost:5173,http://localhost:5174,http://localhost:8080}
+
+# ── Social login (Google / GitHub OAuth2) ────────────────────
+# Client credentials come from environment variables. A provider with empty
+# client-id/secret is reported as unconfigured (authorize returns 503) and
+# the frontend hides its button.
+oauth:
+  # Where the browser is redirected after a successful social sign-in. The
+  # currently running Vite dev server is 5174; override OAUTH_FRONTEND_BASE_URL
+  # when developing on another port. Must match a redirect URI allowed in the
+  # Google / GitHub developer console.
+  frontend-base-url: ${OAUTH_FRONTEND_BASE_URL:http://localhost:5174}
+  google:
+    client-id: ${GOOGLE_CLIENT_ID:}
+    client-secret: ${GOOGLE_CLIENT_SECRET:}
+    redirect-uri: ${GOOGLE_REDIRECT_URI:http://localhost:8080/api/auth/oauth/google/callback}
+    authorize-url: ${GOOGLE_AUTH_URL:https://accounts.google.com/o/oauth2/v2/auth}
+    token-url: ${GOOGLE_TOKEN_URL:https://oauth2.googleapis.com/token}
+    user-info-url: ${GOOGLE_USERINFO_URL:https://www.googleapis.com/oauth2/v3/userinfo}
+    scope: openid email profile
+  github:
+    client-id: ${GITHUB_CLIENT_ID:}
+    client-secret: ${GITHUB_CLIENT_SECRET:}
+    redirect-uri: ${GITHUB_REDIRECT_URI:http://localhost:8080/api/auth/oauth/github/callback}
+    authorize-url: ${GITHUB_AUTH_URL:https://github.com/login/oauth/authorize}
+    token-url: ${GITHUB_TOKEN_URL:https://github.com/login/oauth/access_token}
+    user-info-url: ${GITHUB_USERINFO_URL:https://api.github.com/user}
+    emails-url: ${GITHUB_EMAILS_URL:https://api.github.com/user/emails}
+    scope: read:user user:email
+
 eureka:
   instance:
     # Register with the container IP (required for Docker: hostname is an unresolvable container ID)
@@ -22,6 +86,12 @@ eureka:
     fetch-registry: true
 
 management:
+  health:
+    # Mail health is only meaningful when SMTP is configured; in dev mode
+    # (MAIL_ENABLED=false) the MailHealthIndicator would otherwise fail and
+    # drag the aggregate health to DOWN.
+    mail:
+      enabled: ${MAIL_ENABLED:false}
   endpoints:
     web:
       exposure:

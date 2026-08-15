@@ -58,6 +58,10 @@ public class UserCredential {
     @Column(name = "updated_at", nullable = false)
     private LocalDateTime updatedAt;
 
+    /** When the password was last changed (null for accounts that never changed it). */
+    @Column(name = "password_changed_at")
+    private LocalDateTime passwordChangedAt;
+
     @PrePersist
     protected void onCreate() {
         this.createdAt = LocalDateTime.now();

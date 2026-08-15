@@ -34,26 +34,49 @@ public class JwtUtil {
     private final SecretKey signingKey;
 
     public JwtUtil(@Value("${jwt.secret}") String secret) {
-        byte[] keyBytes = decodeSecret(secret);
+        byte[] keyBytes = decodeSecret(requireStrongSecret(secret));
         this.signingKey = new SecretKeySpec(keyBytes, "HmacSHA256");
     }
 
     /**
+     * Fails fast at startup when the JWT secret is missing or weaker than
+     * 256 bits. The shared config deliberately ships without a fallback
+     * secret, so a missing {@code JWT_SECRET} must stop the gateway instead
+     * of silently validating tokens with a known default.
+     */
+    private static String requireStrongSecret(String secret) {
+        if (secret == null || secret.isBlank()) {
+            throw new IllegalStateException(
+                    "JWT secret is not configured. Set the JWT_SECRET environment variable "
+                            + "(Base64-encoded, at least 32 bytes) before starting the service.");
+        }
+        return secret;
+    }
+
+    /**
      * Decodes the JWT secret: tries Base64 first, then falls back to
-     * SHA-256 key derivation for plain-text values.
-     * <p>
-     * This dual-mode handling accommodates config-server property values that
-     * may arrive with the literal "${JWT_SECRET:…}" placeholder unresolved
-     * (config-data mode, no bootstrap).
+     * SHA-256 key derivation for plain-text values. Secrets that resolve to
+     * fewer than 32 bytes are rejected so a weak key never reaches the
+     * verifier.
      */
     private static byte[] decodeSecret(String secret) {
         try {
             byte[] decoded = Base64.getDecoder().decode(secret);
+            if (decoded.length < 32) {
+                throw new IllegalStateException(
+                        "JWT secret is too weak: Base64 value decodes to " + decoded.length
+                                + " bytes. Use at least 32 bytes (256 bits).");
+            }
             log.debug("JWT secret decoded from Base64");
             return decoded;
         } catch (IllegalArgumentException e) {
-            log.warn("JWT secret is not valid Base64; falling back to SHA-256 key derivation. " +
-                      "For production, set a Base64-encoded secret via JWT_SECRET environment variable.");
+            if (secret.length() < 32) {
+                throw new IllegalStateException(
+                        "JWT secret is too weak: expected a Base64 value of at least 32 bytes, "
+                                + "or a plain-text secret of at least 32 characters.");
+            }
+            log.warn("JWT secret is not valid Base64; deriving a 256-bit key via SHA-256 "
+                      + "(set a Base64 JWT_SECRET for production)");
             return sha256(secret);
         }
     }
@@ -113,6 +136,13 @@ public class JwtUtil {
         } catch (Exception e) {
             return Optional.empty();
         }
+    }
+
+    /**
+     * Extracts the {@code username} claim (String) from a validated token.
+     */
+    public Optional<String> getUsername(Claims claims) {
+        return Optional.ofNullable(claims.get("username", String.class));
     }
 
     /**

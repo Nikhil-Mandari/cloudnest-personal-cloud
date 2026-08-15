@@ -11,7 +11,7 @@ environment: development
 # ── Global JWT Configuration ──────────────────────────────────
 # Used by API Gateway (validation) and Auth Service (generation)
 jwt:
-  secret: "${JWT_SECRET:YnVnZmF0YWxzbm93bGVvcGFyZHN0cmV0Y2hpbmdvbmV0d29zbm93ZmFsbGluZ3RocmVlc2ZhbGxpbmc="
+  secret: ${JWT_SECRET:}
   expiration-ms: ${JWT_EXPIRATION_MS:86400000}  # 24 hours default
 
 # ── Global Datasource Defaults ───────────────────────────────
