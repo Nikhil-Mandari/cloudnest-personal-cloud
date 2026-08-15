@@ -24,7 +24,7 @@ echo "==> Creating VM $VM ($SIZE, Ubuntu LTS, SSH auth)..."
 az vm create \
   --resource-group "$RG" \
   --name "$VM" \
-  --image UbuntuLTS \
+  --image Ubuntu2204 \
   --size "$SIZE" \
   --admin-username "$ADMIN" \
   --generate-ssh-keys \
