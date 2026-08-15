@@ -115,7 +115,9 @@ az vm open-port --resource-group cloudnest-rg --name cloudnest-vm --port 443
 ## 5. Environment variables (full checklist)
 
 All of these are supplied at runtime via the VM's environment or a gitignored `.env`
-file. **Never commit real values.** The tracked `backend/.env.example` is a safe template.
+file. **Never commit real values.** The tracked root `.env.example` is a safe
+placeholder template (`backend/.env.example` covers the SMTP subset used by
+local-only development).
 
 | Variable | Required | Purpose |
 |---|---|---|
@@ -352,6 +354,49 @@ webhook in the Razorpay dashboard.
 
 ---
 
+## 21. Troubleshooting
+
+**Services stay `unhealthy` / crash-looping after `docker compose up -d`**
+- Cold-start cascade: all JVMs boot at once and the B2ms saturates; wait 3–5 min,
+  then re-check `docker compose ps`. The Compose healthchecks tolerate slow boot
+  (start_period) — do not force-recreate repeatedly.
+- `docker logs <service> --tail 100` to see the actual error (config fetch, DB
+  connect, SMTP, Eureka registration).
+- Eureka/Config Server must be healthy **before** the app services register; if they
+  are restarting, the app services will too.
+
+**Auth starts but mail health is slow**
+- `MailHealthIndicator` probes Gmail SMTP and can take ~20s under load; this delays
+  the `UP` health flag but does not block the app. Confirm real OTP delivery in
+  logs (`OTP email sent successfully to <email>`) rather than trusting health alone.
+
+**Gateway returns 503 / connection refused**
+- A downstream service is down or deregistered from Eureka. Check Eureka
+  (`http://localhost:8761` on the VM, or via SSH tunnel) for 9/9 UP and restart the
+  missing service.
+
+**Registration works but no OTP email arrives**
+- `MAIL_ENABLED` must be `true` with a valid Gmail App Password (16 chars, no
+  spaces). Check auth-service logs for the SMTP error; never log the password.
+  Confirm the OTP is NOT returned in the API response (`devOtp: null`).
+
+**Razorpay order creation fails / times out**
+- The container must reach `api.razorpay.com`. On Docker Desktop, NAT64/IPv6 DNS
+  resolution can be flaky — retry. On the VM, ensure outbound HTTPS (443) is open.
+- Webhook 400 with `X-Razorpay-Signature` present = signature mismatch; verify the
+  webhook secret matches the Razorpay dashboard.
+
+**File upload fails inside a folder**
+- Confirm MinIO is healthy and the bucket exists. Verify the file row has the
+  expected `parent_folder_id` and that only one record exists (no duplicate
+  upload).
+
+**Never**
+- `docker compose down -v` (destroys MySQL + MinIO volumes).
+- Expose 3306/9000/8761/8080–8087 to the public internet.
+
+---
+
 ## Cost estimate (indicative, India region)
 
 | Resource | Tier | Est. monthly |
@@ -368,7 +413,7 @@ Azure for Students / free credits typically cover this comfortably.
 
 1. Create VM (B2ms, Ubuntu), open 80/443/22.
 2. `git clone` repo on the VM.
-3. `cp backend/.env.example .env` and fill all secrets.
+3. `cp .env.example .env` and fill all secrets.
 4. `docker compose build && docker compose up -d`.
 5. Wait 3–5 min; confirm `docker compose ps` shows 12/12 healthy.
 6. Install Caddy; configure `cloudnest.example.com` → gateway + static frontend.
