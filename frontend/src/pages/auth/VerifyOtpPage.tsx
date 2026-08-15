@@ -1,8 +1,9 @@
-import { useEffect, useRef, useState, type ClipboardEvent, type KeyboardEvent } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { Link, Navigate, useLocation } from 'react-router-dom';
-import { KeyRound, RefreshCw, ShieldCheck } from 'lucide-react';
+import { KeyRound, RefreshCw } from 'lucide-react';
 import { toast } from 'react-toastify';
 
+import { OtpInput } from '@/components/auth/OtpInput';
 import { Button } from '@/components/ui/Button';
 import { APP_ROUTES } from '@/constants/routes';
 import { useAuthMutations } from '@/hooks/useAuthMutations';
@@ -55,11 +56,10 @@ export function VerifyOtpPage() {
   const { verifyOtpMutation, resendOtpMutation } = useAuthMutations();
 
   const [digits, setDigits] = useState<string[]>(() => Array(OTP_LENGTH).fill(''));
-  const [devOtp, setDevOtp] = useState<string | undefined>(state?.devOtp);
   const [resendKey, setResendKey] = useState(0);
   const remaining = useCountdown(state?.resendAfterSeconds ?? DEFAULT_COOLDOWN, resendKey);
 
-  const inputsRef = useRef<Array<HTMLInputElement | null>>([]);
+  const submitRef = useRef<HTMLButtonElement | null>(null);
 
   const email = state?.email ?? 'your email address';
   const isLogin = state?.purpose === 'login';
@@ -71,38 +71,6 @@ export function VerifyOtpPage() {
   if (!state) {
     return <Navigate to={APP_ROUTES.login} replace />;
   }
-
-  const handleDigitChange = (index: number, value: string) => {
-    const cleaned = value.replace(/\D/g, '').slice(-1);
-    setDigits((prev) => {
-      const next = [...prev];
-      next[index] = cleaned;
-      return next;
-    });
-    if (cleaned && index < OTP_LENGTH - 1) {
-      inputsRef.current[index + 1]?.focus();
-    }
-  };
-
-  const handleKeyDown = (index: number, event: KeyboardEvent<HTMLInputElement>) => {
-    if (event.key === 'Backspace' && !digits[index] && index > 0) {
-      inputsRef.current[index - 1]?.focus();
-    }
-  };
-
-  const handlePaste = (event: ClipboardEvent) => {
-    event.preventDefault();
-    const pasted = event.clipboardData.getData('text').replace(/\D/g, '').slice(0, OTP_LENGTH);
-    if (!pasted) {
-      return;
-    }
-    const next = Array(OTP_LENGTH).fill('');
-    for (let i = 0; i < pasted.length; i++) {
-      next[i] = pasted[i];
-    }
-    setDigits(next);
-    inputsRef.current[Math.min(pasted.length, OTP_LENGTH - 1)]?.focus();
-  };
 
   const submit = () => {
     if (!complete) {
@@ -122,9 +90,8 @@ export function VerifyOtpPage() {
     resendOtpMutation.mutate(
       { email: state.email, challengeToken: state.challengeToken },
       {
-        onSuccess: ({ data }) => {
+        onSuccess: () => {
           toast.success('A new code has been sent.');
-          setDevOtp(data.data.devOtp ?? undefined);
           setResendKey((key) => key + 1);
         },
         onError: (error) => {
@@ -160,19 +127,6 @@ export function VerifyOtpPage() {
         )}
       </div>
 
-      {devOtp && !isTwoFactor && (
-        <div className="mb-6 flex items-center gap-3 rounded-xl border border-amber-300/60 bg-amber-50 px-4 py-3 text-sm text-amber-800 dark:border-amber-500/30 dark:bg-amber-500/10 dark:text-amber-300">
-          <ShieldCheck className="h-5 w-5 shrink-0" />
-          <div>
-            <p className="font-semibold">Development mode</p>
-            <p>
-              Email delivery is disabled, so here is your code:{' '}
-              <span className="font-mono text-base font-bold tracking-widest">{devOtp}</span>
-            </p>
-          </div>
-        </div>
-      )}
-
       <form
         onSubmit={(event) => {
           event.preventDefault();
@@ -180,32 +134,10 @@ export function VerifyOtpPage() {
         }}
         noValidate
       >
-        <div className="flex justify-center gap-2 sm:gap-2.5" onPaste={handlePaste}>
-          {digits.map((digit, index) => (
-            <input
-              key={index}
-              ref={(el) => {
-                inputsRef.current[index] = el;
-              }}
-              type="text"
-              inputMode="numeric"
-              autoComplete="one-time-code"
-              aria-label={`Digit ${index + 1}`}
-              value={digit}
-              onChange={(event) => handleDigitChange(index, event.target.value)}
-              onKeyDown={(event) => handleKeyDown(index, event)}
-              className={cn(
-                'h-14 w-11 rounded-xl border text-center font-mono text-xl font-bold shadow-sm transition-all sm:h-16 sm:w-13',
-                'focus:border-brand-500 focus:ring-brand-500/25 focus:outline-none focus:ring-2',
-                digit
-                  ? 'border-brand-500 bg-brand-50 text-brand-700 dark:border-brand-500 dark:bg-brand-500/10 dark:text-brand-300'
-                  : 'border-gray-300 bg-white text-gray-900 dark:border-gray-700 dark:bg-gray-950 dark:text-white',
-              )}
-            />
-          ))}
-        </div>
+        <OtpInput digits={digits} onChange={setDigits} submitButtonRef={submitRef} />
 
         <Button
+          ref={submitRef}
           type="submit"
           size="lg"
           fullWidth
